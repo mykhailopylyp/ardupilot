@@ -1045,6 +1045,22 @@ const AP_Param::GroupInfo AP_OSD_Screen::var_info[] = {
 	AP_SUBGROUPINFO(rrpm, "RPM", 62, AP_OSD_Screen, AP_OSD_Setting),
 #endif
 
+    // @Param: OSDTEL_EN
+    // @DisplayName: OSDTEL_EN
+    // @Description: Display OSD telemetry for sentinel AAT
+    // @Values: 0:Disabled,1:Enabled
+
+    // @Param: OSDTEL_X
+    // @DisplayName: OSDTEL_X
+    // @Description: Horizontal position on screen
+    // @Range: 0 29
+
+    // @Param: OSDTEL_Y
+    // @DisplayName: OSDTEL_Y
+    // @Description: Vertical position on screen
+    // @Range: 0 15
+    AP_SUBGROUPINFO(osd_telemetry, "OSDTEL", 61, AP_OSD_Screen, AP_OSD_Setting),
+
     AP_GROUPEND
 };
 
@@ -1300,6 +1316,9 @@ uint8_t AP_OSD_AbstractScreen::symbols_lookup_table[AP_OSD_NUM_SYMBOLS];
 #define SYM_HEADING 104
 #define SYM_RADIUS 105
 #define SYM_FLAP 106
+
+#define SYM_TELEMETRY_0 107
+#define SYM_TELEMETRY_1 108
 
 #define SYMBOL(n) AP_OSD_AbstractScreen::symbols_lookup_table[n]
 
@@ -2550,6 +2569,72 @@ void AP_OSD_Screen::draw_rngf(uint8_t x, uint8_t y)
 }
 #endif
 
+void AP_OSD_Screen::draw_osd_telemetry(uint8_t x, uint8_t y)
+{
+    static int16_t trk_elevation  = 127;
+    static int32_t trk_bearing   = 0;
+
+    uint32_t trk_data;
+    uint16_t trk_crc = 0;
+
+    Location loc;
+    if (AP_Notify::flags.armed) {
+        AP_AHRS &ahrs = AP::ahrs();
+        if (ahrs.get_location(loc) && ahrs.home_is_set()){
+            const Location &home_loc = ahrs.get_home();
+            float distanceToHome = home_loc.get_distance(loc);
+
+            if (distanceToHome > 5.0f) {
+                trk_bearing = wrap_360_cd(loc.get_bearing_to(home_loc));
+                trk_bearing += 36000 + 18000;
+                trk_bearing %= 36000;
+                trk_bearing /= 100;
+                float alt;
+                ahrs.get_relative_position_D_home(alt); // ahrs.get_relative_position_D_home(alt) = meters
+                alt = -alt; // must be negative
+                float at = atan2F(alt, distanceToHome);
+                trk_elevation = (float)at * 57.2957795; // 57.2957795 = 1 rad
+                trk_elevation += 37; // because elevation in telemetry should be from -37 to 90
+
+                if (trk_elevation < 0) {
+                    trk_elevation = 0;
+                }
+            }  
+        } else {
+            trk_elevation = 127;
+            trk_bearing   = 0; 
+        }
+    }
+
+    trk_data = 0; // bit? 0    - packet type 0 = bearing/elevation, 1 = 2 byte data packet
+    trk_data = trk_data | (uint32_t)(0x7F & trk_elevation) << 1;    // bits 1-7  - elevation angle to target. NOTE uint8 is abused. constrained value of -37 to 90 sent as 0 to 127.
+    trk_data = trk_data | (uint32_t)trk_bearing << 8;               // bits 8-17 - bearing angle to target. 0 = true north. 0 to 360
+
+     trk_crc = osdAATTelemetry_CRC(0xFF & trk_data, trk_crc);        // CRC First Byte? bits 0-7
+     trk_crc = osdAATTelemetry_CRC(0xFF & trk_bearing, trk_crc);     // CRC Second Byte bits 8-15
+     trk_crc = osdAATTelemetry_CRC(trk_bearing >> 8, trk_crc);       // CRC Third Byte? bits? 16-17
+     trk_data = trk_data | (uint32_t)trk_crc << 17;                  // bits 18-29 CRC & 0x3FFFF
+
+     for (uint8_t t_ctr = 0; t_ctr < 30; t_ctr++) { // write to screen buffer, big endian
+         if (trk_data & (uint32_t)1 << t_ctr){
+             backend->write(29 - t_ctr, y, false, "%c", SYMBOL(SYM_TELEMETRY_0));
+         }
+         else
+         {
+             backend->write(29 - t_ctr, y, false, "%c", SYMBOL(SYM_TELEMETRY_1));
+         }
+     }
+}
+
+uint16_t AP_OSD_Screen::osdAATTelemetry_CRC(uint8_t data, uint16_t crc_accum)
+{
+    uint8_t tmp;
+    tmp = data ^ (uint8_t)(crc_accum & 0xff);
+    tmp ^= (tmp << 4);
+    crc_accum = (crc_accum >> 8) ^ (tmp << 8) ^ (tmp << 3) ^ (tmp >> 4);
+    return crc_accum;
+}
+
 #define DRAW_SETTING(n) if (n.enabled) draw_ ## n(n.xpos, n.ypos)
 
 #if HAL_WITH_OSD_BITMAP || HAL_WITH_MSP_DISPLAYPORT
@@ -2649,6 +2734,7 @@ void AP_OSD_Screen::draw(void)
     DRAW_SETTING(rc_active_antenna);
     DRAW_SETTING(rc_lq);
 #endif
+    DRAW_SETTING(osd_telemetry);
 }
 #endif
 #endif // OSD_ENABLED

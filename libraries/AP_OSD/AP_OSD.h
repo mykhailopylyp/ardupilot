@@ -49,7 +49,7 @@ class AP_MSP;
 #define PARAM_INDEX(key, idx, group) (uint32_t(uint32_t(key) << 23 | uint32_t(idx) << 18 | uint32_t(group)))
 #define PARAM_TOKEN_INDEX(token) PARAM_INDEX(AP_Param::get_persistent_key(token.key), token.idx, token.group_element)
 
-#define AP_OSD_NUM_SYMBOLS 107
+#define AP_OSD_NUM_SYMBOLS 109
 #define OSD_MAX_INSTANCES 2
 
 #if AP_OSD_LINK_STATS_EXTENSIONS_ENABLED
@@ -254,7 +254,7 @@ private:
     AP_OSD_Setting cell_volt{true, 1, 1};
     AP_OSD_Setting batt_bar{true, 1, 1};
     AP_OSD_Setting arming{true, 1, 1};
-
+    AP_OSD_Setting osd_telemetry{false, 0, 0};
 #if HAL_WITH_MSP_DISPLAYPORT
     // Per screen HD resolution options (currently supported only by DisplayPort)
     AP_Int8 txt_resolution;
@@ -348,7 +348,9 @@ private:
     void draw_rc_active_antenna(uint8_t x, uint8_t y);    
     void draw_rc_lq(uint8_t x, uint8_t y);
 #endif
-
+    void draw_osd_telemetry(uint8_t x, uint8_t y);
+    uint16_t osdAATTelemetry_CRC(uint8_t data, uint16_t crcAccum);
+    
     struct {
         bool load_attempted;
         const char *str;

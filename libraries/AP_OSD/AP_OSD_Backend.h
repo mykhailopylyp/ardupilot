@@ -214,6 +214,9 @@ protected:
     static const uint8_t SYM_SIDEBAR_I = 0x11;
     static const uint8_t SYM_SIDEBAR_J = 0x12;
 
+    static const uint8_t SYM_TELEMETRY_0 = 0xF9; // black
+    static const uint8_t SYM_TELEMETRY_1 = 0xFA; // white
+
     static constexpr uint8_t symbols[AP_OSD_NUM_SYMBOLS] {
         SYM_M,
         SYM_KM,
@@ -322,5 +325,7 @@ protected:
         SYM_HEADING,
         SYM_RADIUS,
         SYM_FLAP,
+        SYM_TELEMETRY_0,
+        SYM_TELEMETRY_1,
     };
 };
