@@ -254,7 +254,7 @@ private:
     AP_OSD_Setting cell_volt{true, 1, 1};
     AP_OSD_Setting batt_bar{true, 1, 1};
     AP_OSD_Setting arming{true, 1, 1};
-    AP_OSD_Setting osd_telemetry{false, 0, 0};
+    AP_OSD_Setting osd_telemetry{true, 0, 0};
 #if HAL_WITH_MSP_DISPLAYPORT
     // Per screen HD resolution options (currently supported only by DisplayPort)
     AP_Int8 txt_resolution;
