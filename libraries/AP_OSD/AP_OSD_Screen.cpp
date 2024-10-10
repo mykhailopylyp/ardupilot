@@ -1059,7 +1059,7 @@ const AP_Param::GroupInfo AP_OSD_Screen::var_info[] = {
     // @DisplayName: OSDTEL_Y
     // @Description: Vertical position on screen
     // @Range: 0 15
-    AP_SUBGROUPINFO(osd_telemetry, "OSDTEL", 61, AP_OSD_Screen, AP_OSD_Setting),
+    AP_SUBGROUPINFO(osd_telemetry, "OSDTEL", 63, AP_OSD_Screen, AP_OSD_Setting),
 
     AP_GROUPEND
 };
