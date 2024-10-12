@@ -1319,6 +1319,22 @@ uint8_t AP_OSD_AbstractScreen::symbols_lookup_table[AP_OSD_NUM_SYMBOLS];
 
 #define SYM_TELEMETRY_0 107
 #define SYM_TELEMETRY_1 108
+#define SYM_TELEMETRY_2 109
+#define SYM_TELEMETRY_3 110
+#define SYM_TELEMETRY_4 111
+#define SYM_TELEMETRY_5 112
+#define SYM_TELEMETRY_6 113
+#define SYM_TELEMETRY_7 114
+#define SYM_TELEMETRY_8 115
+#define SYM_TELEMETRY_9 116
+#define SYM_TELEMETRY_10 117
+#define SYM_TELEMETRY_11 118
+#define SYM_TELEMETRY_12 119
+#define SYM_TELEMETRY_13 120
+#define SYM_TELEMETRY_14 121
+#define SYM_TELEMETRY_15 122
+
+#define CRC32_POLYNOMIAL 0x04C11DB7
 
 #define SYMBOL(n) AP_OSD_AbstractScreen::symbols_lookup_table[n]
 
@@ -2571,59 +2587,94 @@ void AP_OSD_Screen::draw_rngf(uint8_t x, uint8_t y)
 
 void AP_OSD_Screen::draw_osd_telemetry(uint8_t x, uint8_t y)
 {
-    static int16_t trk_elevation  = 127;
-    static int32_t trk_bearing   = 0;
-
-    uint32_t trk_data;
-    uint16_t trk_crc = 0;
-
+#ifdef TEST_TELEMETRY  
+    // Define alt, lat, lng variables (alt as 16-bit, lat/lng as 32-bit)
+    uint16_t alt = 4500;             // Example altitude (in meters, for example)
+    uint32_t lat = 123456789;        // Example latitude (encoded)
+    uint32_t lng = 987654321;        // Example longitude (encoded)
+#else
+    if (!AP_Notify::flags.armed) return;
+    AP_AHRS &ahrs = AP::ahrs();
     Location loc;
-    if (AP_Notify::flags.armed) {
-        AP_AHRS &ahrs = AP::ahrs();
-        if (ahrs.get_location(loc) && ahrs.home_is_set()){
-            const Location &home_loc = ahrs.get_home();
-            float distanceToHome = home_loc.get_distance(loc);
+    if (!ahrs.get_location(loc)) return;
+    uint16_t alt = loc.alt;
+    uint32_t lat = loc.lat;
+    uint32_t lng = loc.lng;
+#endif
 
-            if (distanceToHome > 5.0f) {
-                trk_bearing = wrap_360_cd(loc.get_bearing_to(home_loc));
-                trk_bearing += 36000 + 18000;
-                trk_bearing %= 36000;
-                trk_bearing /= 100;
-                float alt;
-                ahrs.get_relative_position_D_home(alt); // ahrs.get_relative_position_D_home(alt) = meters
-                alt = -alt; // must be negative
-                float at = atan2F(alt, distanceToHome);
-                trk_elevation = (float)at * 57.2957795; // 57.2957795 = 1 rad
-                trk_elevation += 37; // because elevation in telemetry should be from -37 to 90
+    // Create an array to hold the 10-byte message
+    uint8_t packet[14];  // 10-byte message + 4-byte CRC
 
-                if (trk_elevation < 0) {
-                    trk_elevation = 0;
-                }
-            }  
-        } else {
-            trk_elevation = 127;
-            trk_bearing   = 0; 
+    // Construct the 10-byte message
+    constructMessage(alt, lat, lng, packet);
+
+    // Append the 32-bit CRC to the message
+    appendCRC32ToMessage(packet, 10);
+
+    // Now message contains 14 bytes (10-byte message + 4-byte CRC)
+    for (int i = 0; i < 14; ++i) {
+        write4Bits(i*2 + 1, y, packet[i] & 0xF);
+        write4Bits(i*2 + 1 + 1, y, (packet[i] >> 4) & 0xF);
+    }
+}
+
+void AP_OSD_Screen::write4Bits(int index, int y, uint8_t bits)
+{
+    backend->write(index, y, false, "%c", SYMBOL(SYM_TELEMETRY_0 + bits));
+}
+
+// Function to compute CRC32
+uint32_t AP_OSD_Screen::calculateCRC32(const uint8_t *data, uint16_t length) {
+    uint32_t crc = 0xFFFFFFFF; // Initialize CRC to all 1s
+    
+    for (uint16_t i = 0; i < length; ++i) {
+        crc ^= (uint32_t)data[i] << 24;
+        for (uint8_t bit = 0; bit < 8; ++bit) {
+            if (crc & 0x80000000) {
+                crc = (crc << 1) ^ CRC32_POLYNOMIAL;
+            } else {
+                crc <<= 1;
+            }
         }
     }
 
-    trk_data = 0; // bit? 0    - packet type 0 = bearing/elevation, 1 = 2 byte data packet
-    trk_data = trk_data | (uint32_t)(0x7F & trk_elevation) << 1;    // bits 1-7  - elevation angle to target. NOTE uint8 is abused. constrained value of -37 to 90 sent as 0 to 127.
-    trk_data = trk_data | (uint32_t)trk_bearing << 8;               // bits 8-17 - bearing angle to target. 0 = true north. 0 to 360
+    return ~crc; // Return the final CRC value (inverted)
+}
 
-     trk_crc = osdAATTelemetry_CRC(0xFF & trk_data, trk_crc);        // CRC First Byte? bits 0-7
-     trk_crc = osdAATTelemetry_CRC(0xFF & trk_bearing, trk_crc);     // CRC Second Byte bits 8-15
-     trk_crc = osdAATTelemetry_CRC(trk_bearing >> 8, trk_crc);       // CRC Third Byte? bits? 16-17
-     trk_data = trk_data | (uint32_t)trk_crc << 17;                  // bits 18-29 CRC & 0x3FFFF
+// Function to append 32-bit CRC to a message
+void AP_OSD_Screen::appendCRC32ToMessage(uint8_t *packet, uint8_t packetLength) {
+    if (packetLength != 10) {
+        // Ensure the message length is exactly 80 bits (10 bytes)
+        return;
+    }
 
-     for (uint8_t t_ctr = 0; t_ctr < 30; t_ctr++) { // write to screen buffer, big endian
-         if (trk_data & (uint32_t)1 << t_ctr){
-             backend->write(29 - t_ctr, y, false, "%c", SYMBOL(SYM_TELEMETRY_0));
-         }
-         else
-         {
-             backend->write(29 - t_ctr, y, false, "%c", SYMBOL(SYM_TELEMETRY_1));
-         }
-     }
+    // Calculate the 32-bit CRC for the 80-bit message
+    uint32_t crc = calculateCRC32(packet, packetLength);
+
+    // Append the 32-bit CRC to the message
+    packet[10] = (crc >> 24) & 0xFF;
+    packet[11] = (crc >> 16) & 0xFF;
+    packet[12] = (crc >> 8) & 0xFF;
+    packet[13] = crc & 0xFF;
+}
+
+// Function to construct a 10-byte message from alt, lat, lng
+void AP_OSD_Screen::constructMessage(uint16_t alt, uint32_t lat, uint32_t lng, uint8_t *packet) {
+    // Pack 2 bytes of alt into the message
+    packet[0] = (alt >> 8) & 0xFF;   // MSB of alt
+    packet[1] = alt & 0xFF;          // LSB of alt
+
+    // Pack the most significant 4 bytes of lat into the message
+    packet[2] = (lat >> 24) & 0xFF;  // MSB of lat
+    packet[3] = (lat >> 16) & 0xFF;  // Next byte of lat
+    packet[4] = (lat >> 8) & 0xFF;   // Next byte of lat
+    packet[5] = lat & 0xFF;          // LSB of lat
+
+    // Pack the most significant 4 bytes of lng into the message
+    packet[6] = (lng >> 24) & 0xFF;  // MSB of lng
+    packet[7] = (lng >> 16) & 0xFF;  // Next byte of lng
+    packet[8] = (lng >> 8) & 0xFF;   // Next byte of lng
+    packet[9] = lng & 0xFF;          // LSB of lng
 }
 
 uint16_t AP_OSD_Screen::osdAATTelemetry_CRC(uint8_t data, uint16_t crc_accum)

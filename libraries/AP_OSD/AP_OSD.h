@@ -49,7 +49,7 @@ class AP_MSP;
 #define PARAM_INDEX(key, idx, group) (uint32_t(uint32_t(key) << 23 | uint32_t(idx) << 18 | uint32_t(group)))
 #define PARAM_TOKEN_INDEX(token) PARAM_INDEX(AP_Param::get_persistent_key(token.key), token.idx, token.group_element)
 
-#define AP_OSD_NUM_SYMBOLS 109
+#define AP_OSD_NUM_SYMBOLS 123
 #define OSD_MAX_INSTANCES 2
 
 #if AP_OSD_LINK_STATS_EXTENSIONS_ENABLED
@@ -61,6 +61,7 @@ class AP_MSP;
 #define AP_OSD_WARN_RSSI_DEFAULT 30     // Default value for OSD RSSI panel warning, in %
 #endif
 
+#define TEST_TELEMETRY
 /*
   class to hold one setting
  */
@@ -350,7 +351,11 @@ private:
 #endif
     void draw_osd_telemetry(uint8_t x, uint8_t y);
     uint16_t osdAATTelemetry_CRC(uint8_t data, uint16_t crcAccum);
-    
+    void write4Bits(int index, int y, uint8_t bits);
+    void constructMessage(uint16_t alt, uint32_t lat, uint32_t lng, uint8_t *message);
+    void appendCRC32ToMessage(uint8_t *message, uint8_t messageLength);
+    uint32_t calculateCRC32(const uint8_t *data, uint16_t length);
+
     struct {
         bool load_attempted;
         const char *str;
