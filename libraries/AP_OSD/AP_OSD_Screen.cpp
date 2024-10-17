@@ -2575,11 +2575,14 @@ void AP_OSD_Screen::draw_rngf(uint8_t x, uint8_t y)
 
 void AP_OSD_Screen::draw_osd_telemetry(uint8_t x, uint8_t y)
 {
-#ifdef TEST_TELEMETRY  
-    // Define alt, lat, lng variables (alt as 16-bit, lat/lng as 32-bit)
-    // uint16_t alt = 4500;             // Example altitude (in meters, for example)
-    // uint32_t lat = 123456789;        // Example latitude (encoded)
-    uint32_t lng = 1;        // Example longitude (encoded)
+    static int cnt = 0;
+    cnt = (cnt + 1) % 20;
+#ifdef TEST_TELEMETRY 
+    static uint32_t lng_global = 0;
+    if (cnt == 0)
+        lng_global++;
+
+    uint32_t lng = lng_global;
 #else
     if (!AP_Notify::flags.armed) return;
     AP_AHRS &ahrs = AP::ahrs();
@@ -2590,18 +2593,18 @@ void AP_OSD_Screen::draw_osd_telemetry(uint8_t x, uint8_t y)
     uint32_t lng = loc.lng;
 #endif
 
-    // Create an array to hold the 10-byte message
-    uint8_t packet[7];  // 10-byte message + 4-byte CRC
+    // Create an array to hold the 8-byte message
+    uint8_t packet[8] = {0};  // 5-byte message + 2-byte CRC + redundant byte
 
     // Construct the 10-byte message
     constructMessage((uint8_t)TelemetryType::Longitude,lng, packet);
 
-    // Append the 32-bit CRC to the message
+    // Append the 16-bit CRC to the message
     appendCRC16ToMessage(packet, 5);
 
-    // Now message contains 14 bytes (10-byte message + 4-byte CRC)
-    for (int i = 0; i < 7; ++i) {
-        writeByte(i*4 + 1, y, packet[i]);
+    // Now message contains 8 bytes (5-byte message + 2-byte CRC + redundant byte)
+    for (int i = 0; i < 8; ++i) {
+        writeByte(i*4, y, packet[i]);
     }
 }
 
@@ -2609,8 +2612,8 @@ void AP_OSD_Screen::writeByte(int index, int y, uint8_t byte)
 {
     for(int i = 0; i < 4; i++)
     {
-        backend->write(index + 3 - i, y, false, "%c", SYMBOL(SYM_TELEMETRY_0 + (byte && 0x3)));
-        byte >>= 1;
+        backend->write(index + 3 - i, y, false, "%c", SYMBOL(SYM_TELEMETRY_0 + (byte & 0x3)));
+        byte >>= 2;
     }
 }
 
@@ -2640,7 +2643,7 @@ void AP_OSD_Screen::appendCRC16ToMessage(uint8_t *packet, uint8_t packetLength) 
         return;
     }
 
-    // Calculate the 16-bit CRC for the 80-bit message
+    // Calculate the 16-bit CRC for the 40-bit message
     uint16_t crc = calculateCRC16(packet, packetLength);
 
     // Append the 16-bit CRC to the message
@@ -2650,8 +2653,8 @@ void AP_OSD_Screen::appendCRC16ToMessage(uint8_t *packet, uint8_t packetLength) 
 
 // Function to construct a 5-byte message from type and value
 void AP_OSD_Screen::constructMessage(uint8_t type, uint32_t value, uint8_t *packet) {
-    // 1 byte is type of packet
-    packet[0] = type & 0xFF;
+    // 1 byte is identification info and type of packet
+    packet[0] = (type & 0xFF) | 0b00010100u;
 
     // Pack the most significant 4 bytes of value into the message
     packet[1] = (value >> 24) & 0xFF;  // MSB of value
