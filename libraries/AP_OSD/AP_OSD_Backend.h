@@ -214,22 +214,10 @@ protected:
     static const uint8_t SYM_SIDEBAR_I = 0x11;
     static const uint8_t SYM_SIDEBAR_J = 0x12;
 
-    static const uint8_t SYM_TELEMETRY_0 = 0xF0;
-    static const uint8_t SYM_TELEMETRY_1 = 0xF1;
-    static const uint8_t SYM_TELEMETRY_2 = 0xF2;
-    static const uint8_t SYM_TELEMETRY_3 = 0xF3;
-    static const uint8_t SYM_TELEMETRY_4 = 0xF4;
-    static const uint8_t SYM_TELEMETRY_5 = 0xF5;
-    static const uint8_t SYM_TELEMETRY_6 = 0xF6;
-    static const uint8_t SYM_TELEMETRY_7 = 0xF7;
-    static const uint8_t SYM_TELEMETRY_8 = 0xF8;
-    static const uint8_t SYM_TELEMETRY_9 = 0xF9;
-    static const uint8_t SYM_TELEMETRY_10 = 0xFA;
-    static const uint8_t SYM_TELEMETRY_11 = 0xFB;
-    static const uint8_t SYM_TELEMETRY_12 = 0xFC;
-    static const uint8_t SYM_TELEMETRY_13 = 0xFD;
-    static const uint8_t SYM_TELEMETRY_14 = 0xFE;
-    static const uint8_t SYM_TELEMETRY_15 = 0xFF;
+    static const uint8_t SYM_TELEMETRY_0 = 0xFC;
+    static const uint8_t SYM_TELEMETRY_1 = 0xFD;
+    static const uint8_t SYM_TELEMETRY_2 = 0xFE;
+    static const uint8_t SYM_TELEMETRY_3 = 0xFF;
 
     static constexpr uint8_t symbols[AP_OSD_NUM_SYMBOLS] {
         SYM_M,
@@ -343,17 +331,5 @@ protected:
         SYM_TELEMETRY_1,
         SYM_TELEMETRY_2,
         SYM_TELEMETRY_3,
-        SYM_TELEMETRY_4,
-        SYM_TELEMETRY_5,
-        SYM_TELEMETRY_6,
-        SYM_TELEMETRY_7,
-        SYM_TELEMETRY_8,
-        SYM_TELEMETRY_9,
-        SYM_TELEMETRY_10,
-        SYM_TELEMETRY_11,
-        SYM_TELEMETRY_12,
-        SYM_TELEMETRY_13,
-        SYM_TELEMETRY_14,
-        SYM_TELEMETRY_15,
     };
 };

@@ -49,7 +49,7 @@ class AP_MSP;
 #define PARAM_INDEX(key, idx, group) (uint32_t(uint32_t(key) << 23 | uint32_t(idx) << 18 | uint32_t(group)))
 #define PARAM_TOKEN_INDEX(token) PARAM_INDEX(AP_Param::get_persistent_key(token.key), token.idx, token.group_element)
 
-#define AP_OSD_NUM_SYMBOLS 123
+#define AP_OSD_NUM_SYMBOLS 111
 #define OSD_MAX_INSTANCES 2
 
 #if AP_OSD_LINK_STATS_EXTENSIONS_ENABLED
@@ -349,12 +349,18 @@ private:
     void draw_rc_active_antenna(uint8_t x, uint8_t y);    
     void draw_rc_lq(uint8_t x, uint8_t y);
 #endif
+    enum class TelemetryType : uint8_t
+    {
+        Latitude = 0,
+        Longitude = 1,
+        Altitude = 2
+    };
+
     void draw_osd_telemetry(uint8_t x, uint8_t y);
-    uint16_t osdAATTelemetry_CRC(uint8_t data, uint16_t crcAccum);
-    void write4Bits(int index, int y, uint8_t bits);
-    void constructMessage(uint16_t alt, uint32_t lat, uint32_t lng, uint8_t *message);
-    void appendCRC32ToMessage(uint8_t *message, uint8_t messageLength);
-    uint32_t calculateCRC32(const uint8_t *data, uint16_t length);
+    void writeByte(int index, int y, uint8_t byte);
+    void constructMessage(uint8_t type, uint32_t value, uint8_t *packet);
+    void appendCRC16ToMessage(uint8_t *message, uint8_t messageLength);
+    uint16_t calculateCRC16(const uint8_t *data, uint16_t length);
 
     struct {
         bool load_attempted;

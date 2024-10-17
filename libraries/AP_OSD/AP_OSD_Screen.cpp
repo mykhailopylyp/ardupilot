@@ -1321,20 +1321,8 @@ uint8_t AP_OSD_AbstractScreen::symbols_lookup_table[AP_OSD_NUM_SYMBOLS];
 #define SYM_TELEMETRY_1 108
 #define SYM_TELEMETRY_2 109
 #define SYM_TELEMETRY_3 110
-#define SYM_TELEMETRY_4 111
-#define SYM_TELEMETRY_5 112
-#define SYM_TELEMETRY_6 113
-#define SYM_TELEMETRY_7 114
-#define SYM_TELEMETRY_8 115
-#define SYM_TELEMETRY_9 116
-#define SYM_TELEMETRY_10 117
-#define SYM_TELEMETRY_11 118
-#define SYM_TELEMETRY_12 119
-#define SYM_TELEMETRY_13 120
-#define SYM_TELEMETRY_14 121
-#define SYM_TELEMETRY_15 122
 
-#define CRC32_POLYNOMIAL 0x04C11DB7
+#define CRC16_POLYNOMIAL 0x1021  // Standard CRC-CCITT polynomial
 
 #define SYMBOL(n) AP_OSD_AbstractScreen::symbols_lookup_table[n]
 
@@ -2589,9 +2577,9 @@ void AP_OSD_Screen::draw_osd_telemetry(uint8_t x, uint8_t y)
 {
 #ifdef TEST_TELEMETRY  
     // Define alt, lat, lng variables (alt as 16-bit, lat/lng as 32-bit)
-    uint16_t alt = 4500;             // Example altitude (in meters, for example)
-    uint32_t lat = 123456789;        // Example latitude (encoded)
-    uint32_t lng = 987654321;        // Example longitude (encoded)
+    // uint16_t alt = 4500;             // Example altitude (in meters, for example)
+    // uint32_t lat = 123456789;        // Example latitude (encoded)
+    uint32_t lng = 1;        // Example longitude (encoded)
 #else
     if (!AP_Notify::flags.armed) return;
     AP_AHRS &ahrs = AP::ahrs();
@@ -2603,87 +2591,73 @@ void AP_OSD_Screen::draw_osd_telemetry(uint8_t x, uint8_t y)
 #endif
 
     // Create an array to hold the 10-byte message
-    uint8_t packet[14];  // 10-byte message + 4-byte CRC
+    uint8_t packet[7];  // 10-byte message + 4-byte CRC
 
     // Construct the 10-byte message
-    constructMessage(alt, lat, lng, packet);
+    constructMessage((uint8_t)TelemetryType::Longitude,lng, packet);
 
     // Append the 32-bit CRC to the message
-    appendCRC32ToMessage(packet, 10);
+    appendCRC16ToMessage(packet, 5);
 
     // Now message contains 14 bytes (10-byte message + 4-byte CRC)
-    for (int i = 0; i < 14; ++i) {
-        write4Bits(i*2 + 1, y, packet[i] & 0xF);
-        write4Bits(i*2 + 1 + 1, y, (packet[i] >> 4) & 0xF);
+    for (int i = 0; i < 7; ++i) {
+        writeByte(i*4 + 1, y, packet[i]);
     }
 }
 
-void AP_OSD_Screen::write4Bits(int index, int y, uint8_t bits)
+void AP_OSD_Screen::writeByte(int index, int y, uint8_t byte)
 {
-    backend->write(index, y, false, "%c", SYMBOL(SYM_TELEMETRY_0 + bits));
+    for(int i = 0; i < 4; i++)
+    {
+        backend->write(index + 3 - i, y, false, "%c", SYMBOL(SYM_TELEMETRY_0 + (byte && 0x3)));
+        byte >>= 1;
+    }
 }
 
-// Function to compute CRC32
-uint32_t AP_OSD_Screen::calculateCRC32(const uint8_t *data, uint16_t length) {
-    uint32_t crc = 0xFFFFFFFF; // Initialize CRC to all 1s
+// Function to compute CRC16
+uint16_t AP_OSD_Screen::calculateCRC16(const uint8_t *data, uint16_t length) {
+    uint16_t crc = 0xFFFF;  // Initialize CRC to all 1s (16 bits)
     
     for (uint16_t i = 0; i < length; ++i) {
-        crc ^= (uint32_t)data[i] << 24;
+        crc ^= (uint16_t)data[i] << 8;  // Shift data by 8 bits into the top byte of the CRC
+        
         for (uint8_t bit = 0; bit < 8; ++bit) {
-            if (crc & 0x80000000) {
-                crc = (crc << 1) ^ CRC32_POLYNOMIAL;
+            if (crc & 0x8000) {  // Check if the MSB (16th bit) is set
+                crc = (crc << 1) ^ CRC16_POLYNOMIAL;  // Shift left and XOR with the polynomial
             } else {
-                crc <<= 1;
+                crc <<= 1;  // Just shift left if MSB is not set
             }
         }
     }
 
-    return ~crc; // Return the final CRC value (inverted)
+    return crc;  // Return the final CRC value
 }
 
-// Function to append 32-bit CRC to a message
-void AP_OSD_Screen::appendCRC32ToMessage(uint8_t *packet, uint8_t packetLength) {
-    if (packetLength != 10) {
-        // Ensure the message length is exactly 80 bits (10 bytes)
+// Function to append 16-bit CRC to a message
+void AP_OSD_Screen::appendCRC16ToMessage(uint8_t *packet, uint8_t packetLength) {
+    if (packetLength != 5) {
+        // Ensure the message length is exactly 40 bits (5 bytes)
         return;
     }
 
-    // Calculate the 32-bit CRC for the 80-bit message
-    uint32_t crc = calculateCRC32(packet, packetLength);
+    // Calculate the 16-bit CRC for the 80-bit message
+    uint16_t crc = calculateCRC16(packet, packetLength);
 
-    // Append the 32-bit CRC to the message
-    packet[10] = (crc >> 24) & 0xFF;
-    packet[11] = (crc >> 16) & 0xFF;
-    packet[12] = (crc >> 8) & 0xFF;
-    packet[13] = crc & 0xFF;
+    // Append the 16-bit CRC to the message
+    packet[5] = (crc >> 8) & 0xFF;
+    packet[6] = crc & 0xFF;
 }
 
-// Function to construct a 10-byte message from alt, lat, lng
-void AP_OSD_Screen::constructMessage(uint16_t alt, uint32_t lat, uint32_t lng, uint8_t *packet) {
-    // Pack 2 bytes of alt into the message
-    packet[0] = (alt >> 8) & 0xFF;   // MSB of alt
-    packet[1] = alt & 0xFF;          // LSB of alt
+// Function to construct a 5-byte message from type and value
+void AP_OSD_Screen::constructMessage(uint8_t type, uint32_t value, uint8_t *packet) {
+    // 1 byte is type of packet
+    packet[0] = type & 0xFF;
 
-    // Pack the most significant 4 bytes of lat into the message
-    packet[2] = (lat >> 24) & 0xFF;  // MSB of lat
-    packet[3] = (lat >> 16) & 0xFF;  // Next byte of lat
-    packet[4] = (lat >> 8) & 0xFF;   // Next byte of lat
-    packet[5] = lat & 0xFF;          // LSB of lat
-
-    // Pack the most significant 4 bytes of lng into the message
-    packet[6] = (lng >> 24) & 0xFF;  // MSB of lng
-    packet[7] = (lng >> 16) & 0xFF;  // Next byte of lng
-    packet[8] = (lng >> 8) & 0xFF;   // Next byte of lng
-    packet[9] = lng & 0xFF;          // LSB of lng
-}
-
-uint16_t AP_OSD_Screen::osdAATTelemetry_CRC(uint8_t data, uint16_t crc_accum)
-{
-    uint8_t tmp;
-    tmp = data ^ (uint8_t)(crc_accum & 0xff);
-    tmp ^= (tmp << 4);
-    crc_accum = (crc_accum >> 8) ^ (tmp << 8) ^ (tmp << 3) ^ (tmp >> 4);
-    return crc_accum;
+    // Pack the most significant 4 bytes of value into the message
+    packet[1] = (value >> 24) & 0xFF;  // MSB of value
+    packet[2] = (value >> 16) & 0xFF;  // Next byte of value
+    packet[3] = (value >> 8) & 0xFF;   // Next byte of value
+    packet[4] = value & 0xFF;          // LSB of value
 }
 
 #define DRAW_SETTING(n) if (n.enabled) draw_ ## n(n.xpos, n.ypos)
