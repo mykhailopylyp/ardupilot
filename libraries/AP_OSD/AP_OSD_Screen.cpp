@@ -2571,40 +2571,11 @@ void AP_OSD_Screen::draw_rngf(uint8_t x, uint8_t y)
 
 void AP_OSD_Screen::draw_osd_telemetry(uint8_t x, uint8_t y)
 {
-    static int16_t trk_elevation  = 127;
-    static int32_t trk_bearing   = 0;
+    int16_t trk_elevation  = rand() % 128;
+    int32_t trk_bearing   = rand() % 360;
 
     uint32_t trk_data;
     uint16_t trk_crc = 0;
-
-    Location loc;
-    if (AP_Notify::flags.armed) {
-        AP_AHRS &ahrs = AP::ahrs();
-        if (ahrs.get_location(loc) && ahrs.home_is_set()){
-            const Location &home_loc = ahrs.get_home();
-            float distanceToHome = home_loc.get_distance(loc);
-
-            if (distanceToHome > 5.0f) {
-                trk_bearing = wrap_360_cd(loc.get_bearing_to(home_loc));
-                trk_bearing += 36000 + 18000;
-                trk_bearing %= 36000;
-                trk_bearing /= 100;
-                float alt;
-                ahrs.get_relative_position_D_home(alt); // ahrs.get_relative_position_D_home(alt) = meters
-                alt = -alt; // must be negative
-                float at = atan2F(alt, distanceToHome);
-                trk_elevation = (float)at * 57.2957795; // 57.2957795 = 1 rad
-                trk_elevation += 37; // because elevation in telemetry should be from -37 to 90
-
-                if (trk_elevation < 0) {
-                    trk_elevation = 0;
-                }
-            }  
-        } else {
-            trk_elevation = 127;
-            trk_bearing   = 0; 
-        }
-    }
 
     trk_data = 0; // bit? 0    - packet type 0 = bearing/elevation, 1 = 2 byte data packet
     trk_data = trk_data | (uint32_t)(0x7F & trk_elevation) << 1;    // bits 1-7  - elevation angle to target. NOTE uint8 is abused. constrained value of -37 to 90 sent as 0 to 127.
