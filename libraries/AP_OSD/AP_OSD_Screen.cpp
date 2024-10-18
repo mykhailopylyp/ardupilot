@@ -2575,13 +2575,13 @@ void AP_OSD_Screen::draw_rngf(uint8_t x, uint8_t y)
 
 void AP_OSD_Screen::draw_osd_telemetry(uint8_t x, uint8_t y)
 {
-    static int cnt = 0;
-    cnt = (cnt + 1) % 20;
 #ifdef TEST_TELEMETRY 
-    static uint32_t lng_global = 0;
+    static uint32_t lng_global = 49682163;
+    static int cnt = 0; 
+    cnt = (cnt + 1) % 200;
     if (cnt == 0)
         lng_global++;
-
+    
     uint32_t lng = lng_global;
 #else
     if (!AP_Notify::flags.armed) return;
