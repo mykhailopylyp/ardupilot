@@ -2609,35 +2609,43 @@ void AP_OSD_Screen::getCurrentValue(uint8_t& type, uint32_t& value)
     uint32_t lat = loc.lat;
     uint32_t lng = loc.lng;
 #endif
-    static uint8_t aat_telemetry_current_type = 0;
-    static uint32_t aat_telemetry_current_value = 0;
-    if (aat_telemetry_current_value == 0)
+    // aat_telemetry_step / 6 - suite number
+    // (aat_telemetry_step % 6) / 2 - telemetry type
+    static uint8_t aat_telemetry_step = 0;
+    static uint32_t alt_global;
+    static uint32_t lat_global;
+    static uint32_t lng_global;
+
+    // new snapshot
+    if (aat_telemetry_step % 6 == 0)
     {
-        if (aat_telemetry_current_type == (uint8_t)TelemetryType::Longitude)
-        {
-            aat_telemetry_current_value = lng;
-        }
-
-        if (aat_telemetry_current_type == (uint8_t)TelemetryType::Latitude)
-        {
-            aat_telemetry_current_value = lat;
-        }
-
-        if (aat_telemetry_current_type == (uint8_t)TelemetryType::Altitude)
-        {
-            aat_telemetry_current_value = alt;
-        }
-
-        value = aat_telemetry_current_value;
-        type = aat_telemetry_current_type;
+        alt_global = alt;
+        lat_global = lat;
+        lng_global = lng;
     }
-    else
+
+    uint8_t telemtry_type = (aat_telemetry_step % 6) / 2;
+    if (telemtry_type == (uint8_t)TelemetryType::Longitude)
     {
-        value = aat_telemetry_current_value;
-        type = aat_telemetry_current_type;
-        aat_telemetry_current_value = 0;
-        aat_telemetry_current_type = (aat_telemetry_current_type + 1) % 3;
+        value = lng_global;
     }
+
+    if (telemtry_type == (uint8_t)TelemetryType::Latitude)
+    {
+        value = lat_global;
+    }
+
+    if (telemtry_type == (uint8_t)TelemetryType::Altitude)
+    {
+        value = alt_global;
+    }
+
+    uint8_t suite_number = aat_telemetry_step / 6;
+    type = telemtry_type | (suite_number << 2) | 0b01010000u;
+
+    aat_telemetry_step++;
+    if (aat_telemetry_step >=24) 
+        aat_telemetry_step = 0;
 }
 
 void AP_OSD_Screen::writeByte(int index, int y, uint8_t byte)
@@ -2685,8 +2693,7 @@ void AP_OSD_Screen::appendCRC16ToMessage(uint8_t *packet, uint8_t packetLength) 
 
 // Function to construct a 5-byte message from type and value
 void AP_OSD_Screen::constructMessage(uint8_t type, uint32_t value, uint8_t *packet) {
-    // 1 byte is identification info and type of packet
-    packet[0] = (type & 0xFF) | 0b00010100u;
+    packet[0] = type & 0xFF;
 
     // Pack the most significant 4 bytes of value into the message
     packet[1] = (value >> 24) & 0xFF;  // MSB of value
