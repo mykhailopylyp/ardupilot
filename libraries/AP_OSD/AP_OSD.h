@@ -357,6 +357,7 @@ private:
     };
 
     void draw_osd_telemetry(uint8_t x, uint8_t y);
+    void getCurrentValue(uint8_t& type, uint32_t& value);
     void writeByte(int index, int y, uint8_t byte);
     void constructMessage(uint8_t type, uint32_t value, uint8_t *packet);
     void appendCRC16ToMessage(uint8_t *message, uint8_t messageLength);

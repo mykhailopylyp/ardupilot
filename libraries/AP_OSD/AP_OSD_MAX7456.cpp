@@ -392,7 +392,7 @@ void AP_OSD_MAX7456::transfer_frame()
     buffer_offset = 0;
     for (uint8_t y=0; y<video_lines; y++) {
         for (uint8_t x=0; x<video_columns; x++) {
-            if (!is_dirty(x, y)) {
+            if (!is_dirty(x, y) && y != 0) {
                 continue;
             }
             //ensure space for 1 char and escape sequence

@@ -2575,29 +2575,15 @@ void AP_OSD_Screen::draw_rngf(uint8_t x, uint8_t y)
 
 void AP_OSD_Screen::draw_osd_telemetry(uint8_t x, uint8_t y)
 {
-#ifdef TEST_TELEMETRY 
-    static uint32_t lng_global = 49682163;
-    static int cnt = 0; 
-    cnt = (cnt + 1) % 200;
-    if (cnt == 0)
-        lng_global++;
-    
-    uint32_t lng = lng_global;
-#else
-    if (!AP_Notify::flags.armed) return;
-    AP_AHRS &ahrs = AP::ahrs();
-    Location loc;
-    if (!ahrs.get_location(loc)) return;
-    uint16_t alt = loc.alt;
-    uint32_t lat = loc.lat;
-    uint32_t lng = loc.lng;
-#endif
+    uint32_t value = 0;
+    uint8_t type = 0;
 
+    getCurrentValue(type, value);
     // Create an array to hold the 8-byte message
     uint8_t packet[8] = {0};  // 5-byte message + 2-byte CRC + redundant byte
 
     // Construct the 10-byte message
-    constructMessage((uint8_t)TelemetryType::Longitude,lng, packet);
+    constructMessage(type,value, packet);
 
     // Append the 16-bit CRC to the message
     appendCRC16ToMessage(packet, 5);
@@ -2605,6 +2591,52 @@ void AP_OSD_Screen::draw_osd_telemetry(uint8_t x, uint8_t y)
     // Now message contains 8 bytes (5-byte message + 2-byte CRC + redundant byte)
     for (int i = 0; i < 8; ++i) {
         writeByte(i*4, y, packet[i]);
+    }
+}
+
+void AP_OSD_Screen::getCurrentValue(uint8_t& type, uint32_t& value)
+{
+#ifdef TEST_TELEMETRY 
+    uint32_t lat = rand();
+    uint32_t lng = rand();
+    uint32_t alt = rand();
+#else
+    if (!AP_Notify::flags.armed) return;
+    AP_AHRS &ahrs = AP::ahrs();
+    Location loc;
+    if (!ahrs.get_location(loc)) return;
+    uint32_t alt = loc.alt;
+    uint32_t lat = loc.lat;
+    uint32_t lng = loc.lng;
+#endif
+    static uint8_t aat_telemetry_current_type = 0;
+    static uint32_t aat_telemetry_current_value = 0;
+    if (aat_telemetry_current_value == 0)
+    {
+        if (aat_telemetry_current_type == (uint8_t)TelemetryType::Longitude)
+        {
+            aat_telemetry_current_value = lng;
+        }
+
+        if (aat_telemetry_current_type == (uint8_t)TelemetryType::Latitude)
+        {
+            aat_telemetry_current_value = lat;
+        }
+
+        if (aat_telemetry_current_type == (uint8_t)TelemetryType::Altitude)
+        {
+            aat_telemetry_current_value = alt;
+        }
+
+        value = aat_telemetry_current_value;
+        type = aat_telemetry_current_type;
+    }
+    else
+    {
+        value = aat_telemetry_current_value;
+        type = aat_telemetry_current_type;
+        aat_telemetry_current_value = 0;
+        aat_telemetry_current_type = (aat_telemetry_current_type + 1) % 3;
     }
 }
 
