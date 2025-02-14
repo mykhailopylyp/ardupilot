@@ -35,6 +35,9 @@
 #include <unistd.h>
 #include "pthread.h"
 
+#include <cstdlib>
+#include <sys/ioctl.h>
+
 #include <AP_Notify/AP_Notify.h>
 
 extern const AP_HAL::HAL &hal;
@@ -119,19 +122,45 @@ void AP_OSD_SITL::flush(void)
     counter++;
 }
 
-// main loop of graphics thread
 void AP_OSD_SITL::update_thread(void)
 {
     load_font();
+
+    // --- Create virtual camera device if it doesn't already exist ---
+    if (access("/dev/video2", F_OK) != 0) {
+        // Attempt to load the v4l2loopback module with a device at /dev/video2.
+        // Adjust parameters as needed.
+        int ret = system("sudo modprobe v4l2loopback devices=1 video_nr=2 card_label=\"AP_OSD_VirtualCamera\" exclusive_caps=1");
+        if (ret != 0) {
+            AP_HAL::panic("Failed to load v4l2loopback module for virtual camera");
+        }
+        // Allow some time for the device to be created
+        usleep(500000); // 0.5 sec delay
+    }
+
+    // --- Open the virtual camera device ---
+    int v4l2_fd = open("/dev/video2", O_WRONLY);
+    if (v4l2_fd < 0) {
+        AP_HAL::panic("Unable to open v4l2 virtual camera device");
+    }
+
     {
         WITH_SEMAPHORE(AP::notify().sf_window_mutex);
-        w = NEW_NOTHROW sf::RenderWindow(sf::VideoMode(video_cols*(char_width+char_spacing)*char_scale,
-                                               video_lines*(char_height+char_spacing)*char_scale),
-                                 "OSD");
+        w = NEW_NOTHROW sf::RenderWindow(
+            sf::VideoMode(video_cols * (char_width + char_spacing) * char_scale,
+                          video_lines * (char_height + char_spacing) * char_scale),
+            "OSD");
     }
     if (!w) {
         AP_HAL::panic("Unable to create OSD window");
     }
+
+    // Determine frame dimensions; these must match the virtual camera settings
+    const unsigned int width = video_cols * (char_width + char_spacing) * char_scale;
+    const unsigned int height = video_lines * (char_height + char_spacing) * char_scale;
+    // Our virtual camera expects raw RGB data (3 bytes per pixel)
+    size_t frame_size = width * height * 3;
+    uint8_t *frame_buffer = new uint8_t[frame_size];
 
     while (true) {
         {
@@ -155,15 +184,15 @@ void AP_OSD_SITL::update_thread(void)
                 }
                 w->clear();
 
-                for (uint8_t y=0; y<video_lines; y++) {
-                    for (uint8_t x=0; x<video_cols; x++) {
-                        uint16_t px = x * (char_width+char_spacing) * char_scale;
-                        uint16_t py = y * (char_height+char_spacing) * char_scale;
+                for (uint8_t y = 0; y < video_lines; y++) {
+                    for (uint8_t x = 0; x < video_cols; x++) {
+                        uint16_t px = x * (char_width + char_spacing) * char_scale;
+                        uint16_t py = y * (char_height + char_spacing) * char_scale;
                         sf::Sprite s;
                         uint8_t c = buffer2[y][x];
                         s.setTexture(font[c]);
                         s.setPosition(sf::Vector2f(px, py));
-                        s.scale(sf::Vector2f(char_scale,char_scale));
+                        s.scale(sf::Vector2f(char_scale, char_scale));
                         w->draw(s);
                     }
                 }
@@ -172,11 +201,39 @@ void AP_OSD_SITL::update_thread(void)
                 if (last_font != get_font_num()) {
                     load_font();
                 }
+
+                // --- Capture the rendered frame using sf::Texture ---
+                sf::Texture texture;
+                if (!texture.create(width, height)) {
+                    AP_HAL::panic("Unable to create texture for capturing window");
+                }
+                texture.update(*w);
+                sf::Image screenshot = texture.copyToImage();
+                const sf::Uint8* pixels = screenshot.getPixelsPtr();
+
+                // SFML returns pixels in RGBA (4 bytes per pixel). Convert to RGB.
+                for (unsigned int i = 0, j = 0; i < width * height; i++, j += 4) {
+                    frame_buffer[i * 3]     = pixels[j];     // R
+                    frame_buffer[i * 3 + 1] = pixels[j + 1]; // G
+                    frame_buffer[i * 3 + 2] = pixels[j + 2]; // B
+                }
+
+                // --- Write the frame to the virtual camera ---
+                ssize_t written = ::write(v4l2_fd, reinterpret_cast<const void*>(frame_buffer), frame_size);
+
+                if (written != (ssize_t)frame_size) {
+                    // Optionally handle partial writes or errors here.
+                }
             }
         }
-        usleep(10000);
+        usleep(10000);  // sleep 10ms between iterations
     }
+
+    // Cleanup
+    delete[] frame_buffer;
+    close(v4l2_fd);
 }
+
 
 // trampoline for update thread
 void *AP_OSD_SITL::update_thread_start(void *obj)
