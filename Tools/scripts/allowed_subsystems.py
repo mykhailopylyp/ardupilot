@@ -62,6 +62,7 @@ class AllowedSubsystems(object):
         'ci',
         '.github',
         '.vscode',
+        '.cursor',
         'bootloaders',
         'benchmarks',
         'docs',
@@ -115,6 +116,7 @@ class AllowedSubsystems(object):
         'tests': ['tests', 'Tools'],
         '.github': ['.github', 'ci'],
         '.vscode': ['.vscode'],
+        '.cursor': ['.cursor', 'Tools'],
     }
 
     # Files that live in the repository root -> ordered candidate subsystems.
