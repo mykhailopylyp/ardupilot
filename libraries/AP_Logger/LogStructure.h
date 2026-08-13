@@ -129,6 +129,7 @@ const struct MultiplierStructure log_Multipliers[] = {
 #include <AP_DAL/LogStructure.h>
 #include <AP_NavEKF2/LogStructure.h>
 #include <AP_NavEKF3/LogStructure.h>
+#include <AP_NavUKF/LogStructure.h>
 #include <AP_GPS/LogStructure.h>
 #include <AP_NavEKF/LogStructure.h>
 #include <AP_BattMonitor/LogStructure.h>
@@ -1236,6 +1237,7 @@ LOG_STRUCTURE_FROM_INERTIALSENSOR \
 LOG_STRUCTURE_FROM_DAL \
 LOG_STRUCTURE_FROM_NAVEKF2 \
 LOG_STRUCTURE_FROM_NAVEKF3 \
+LOG_STRUCTURE_FROM_NAVUKF \
 LOG_STRUCTURE_FROM_NAVEKF \
 LOG_STRUCTURE_FROM_AHRS \
 LOG_STRUCTURE_FROM_HAL_CHIBIOS \
@@ -1369,6 +1371,7 @@ enum LogMessages : uint8_t {
     LOG_RCOUT3_MSG,
     LOG_IDS_FROM_FENCE,
     LOG_IDS_FROM_HAL,
+    LOG_IDS_FROM_NAVUKF,
 
     _LOG_LAST_MSG_
 };

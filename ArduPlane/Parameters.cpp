@@ -931,6 +931,12 @@ const AP_Param::Info Plane::var_info[] = {
     GOBJECTN(ahrs.ekf3.EKF3, NavEKF3, "EK3_", NavEKF3),
 #endif
 
+#if HAL_NAVUKF_AVAILABLE
+    // @Group: UKF_
+    // @Path: ../libraries/AP_NavUKF/AP_NavUKF.cpp
+    GOBJECTN(ahrs.ekf_ukf.UKF, NavUKF, "UKF_", NavUKF),
+#endif
+
 #if AP_RSSI_ENABLED
     // @Group: RSSI_
     // @Path: ../libraries/AP_RSSI/AP_RSSI.cpp

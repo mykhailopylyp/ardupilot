@@ -1,0 +1,86 @@
+{
+  "vehicle": "ArduPlane",
+  "frame": "plane",
+  "UKF_USE_UT": 1,
+  "UKF_ALPHA": 0.5,
+  "UKF_BETA": 2.0,
+  "UKF_KAPPA": 0.0,
+  "medium_gps": true,
+  "flight_profile": "complex",
+  "notes": "Both EK3 and UKF enabled with IMU_MASK=1 (single core each on IMU0). RMS vs SIM attitude and SIM2 position/velocity; EKF/UKF position origin offset removed using first 10 armed samples in window. Flight profile=complex. UKF_USE_UT=1 UKF_ALPHA=0.5 UKF_BETA=2 UKF_KAPPA=0. Complex route: FBWA left circuit, climb/descend, CIRCLE, LOITER, ACRO rolls/loops, FBWB circuit, second circuit, CIRCLE; then RTL. Medium GPS: SIM_GPS1_FIXTYPE=3, ACC=2.5m, HNSE=2.0m, NOISE=2.5m, NUMSATS=8, LAG_MS=200; EK3/UKF POSNE_M_NSE=2.0.",
+  "generated_unix": 1786547379.5301528,
+  "runs": [
+    {
+      "primary": "EKF3",
+      "AHRS_EKF_TYPE": 3,
+      "UKF_USE_UT": 1,
+      "medium_gps": true,
+      "flight_profile": "complex",
+      "status": "ok",
+      "compare_from_sim_s": 55.024,
+      "log": "/home/bobr/Github/mpylyp/ardupilot/docs/navukf_rms_results_ut_complex/run_ekf3_primary.bin",
+      "rms": {
+        "XKF1": {
+          "samples": 11399,
+          "rms_roll_deg": 3.4050893003353355,
+          "rms_pitch_deg": 0.4875936570020441,
+          "rms_yaw_deg": 1.672027385183922,
+          "rms_attitude_deg": 3.8246642067522467,
+          "rms_pos_n_m": 2.4278782586869556,
+          "rms_pos_e_m": 2.7253519113310563,
+          "rms_pos_d_m": 0.3038675493136124,
+          "rms_position_m": 3.6625771482832286,
+          "rms_vel_ms": 0.6645825949975502
+        },
+        "UKF1": {
+          "samples": 11399,
+          "rms_roll_deg": 3.422643179201477,
+          "rms_pitch_deg": 0.5940579011290484,
+          "rms_yaw_deg": 1.6457475607683258,
+          "rms_attitude_deg": 3.8439401862936338,
+          "rms_pos_n_m": 2.452034749803078,
+          "rms_pos_e_m": 2.731268474535829,
+          "rms_pos_d_m": 0.39914513523990974,
+          "rms_position_m": 3.6921022105598325,
+          "rms_vel_ms": 0.7047583121100397
+        }
+      }
+    },
+    {
+      "primary": "UKF",
+      "AHRS_EKF_TYPE": 4,
+      "UKF_USE_UT": 1,
+      "medium_gps": true,
+      "flight_profile": "complex",
+      "status": "ok",
+      "compare_from_sim_s": 54.924,
+      "log": "/home/bobr/Github/mpylyp/ardupilot/docs/navukf_rms_results_ut_complex/run_ukf_primary.bin",
+      "rms": {
+        "XKF1": {
+          "samples": 11270,
+          "rms_roll_deg": 0.5296417064189239,
+          "rms_pitch_deg": 0.49601430947959374,
+          "rms_yaw_deg": 1.7272522454557901,
+          "rms_attitude_deg": 1.8734862827944423,
+          "rms_pos_n_m": 2.3819851641013567,
+          "rms_pos_e_m": 2.771552185402564,
+          "rms_pos_d_m": 0.3164150026294525,
+          "rms_position_m": 3.6681702921617054,
+          "rms_vel_ms": 0.6740819419398559
+        },
+        "UKF1": {
+          "samples": 11270,
+          "rms_roll_deg": 0.6618556768668584,
+          "rms_pitch_deg": 0.5974772979466819,
+          "rms_yaw_deg": 1.7011704280287727,
+          "rms_attitude_deg": 1.920680317950427,
+          "rms_pos_n_m": 2.409418420680897,
+          "rms_pos_e_m": 2.7812159225861257,
+          "rms_pos_d_m": 0.4198975193192975,
+          "rms_position_m": 3.703616214012127,
+          "rms_vel_ms": 0.7135703431042562
+        }
+      }
+    }
+  ]
+}

@@ -61,6 +61,7 @@ public:
         friend class AP_AHRS_External;
         friend class AP_AHRS_NavEKF2;
         friend class AP_AHRS_NavEKF3;
+        friend class AP_AHRS_NavUKF;
 
         // is the AHRS subsystem healthy?
         bool healthy;

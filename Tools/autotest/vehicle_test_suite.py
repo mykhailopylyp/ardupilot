@@ -3409,6 +3409,9 @@ class TestSuite(abc.ABC):
                 ret["EK2_ENABLE"] = 1
             if self.force_ahrs_type == 3:
                 ret["EK3_ENABLE"] = 1
+            if self.force_ahrs_type == 4:
+                ret["UKF_ENABLE"] = 1
+                ret["UKF_IMU_MASK"] = 1
             ret["AHRS_EKF_TYPE"] = self.force_ahrs_type
         if self.num_aux_imus > 0:
             ret["SIM_IMU_COUNT"] = self.num_aux_imus + 3
@@ -13563,6 +13566,111 @@ switch value'''
                 raise NotAchievedException(
                     "Insufficient %s/truth samples compared (%u)" % (key, ncompared))
             self.progress("Compared %u %s samples against simulator truth" % (ncompared, key))
+
+    def compute_estimator_rms_vs_sim(self,
+                                    ekf_message_types=None,
+                                    min_samples=100,
+                                    ignore_before_time_s=0,
+                                    log_filepath=None):
+        '''Compute RMS errors of primary-core estimator messages vs SIM/SIM2.
+
+        Returns dict keyed by message type with attitude/position/velocity RMS
+        and sample counts. Same interpolation / origin-offset approach as
+        assert_ekfs_match_sim_state.
+        '''
+        import numpy as np
+        if ekf_message_types is None:
+            ekf_message_types = ['XKF1', 'UKF1']
+        if log_filepath is None:
+            dfreader = self.dfreader_for_current_onboard_log()
+        else:
+            dfreader = self.dfreader_for_path(log_filepath)
+
+        sim = []
+        sim2 = []
+        est = {key: [] for key in ekf_message_types}
+        armed_spans = []
+        armed_at = None
+        while True:
+            m = dfreader.recv_match(type=ekf_message_types + ['SIM', 'SIM2', 'EV'])
+            if m is None:
+                break
+            m_type = m.get_type()
+            t = m.TimeUS * 1e-6
+            if m_type == 'EV':
+                if m.Id == 10 and armed_at is None:
+                    armed_at = t
+                elif m.Id == 11 and armed_at is not None:
+                    armed_spans.append((armed_at, t))
+                    armed_at = None
+            elif m_type == 'SIM':
+                sim.append((t, m.Roll, m.Pitch, m.Yaw))
+            elif m_type == 'SIM2':
+                sim2.append((t, m.VN, m.VE, m.VD, m.PN, m.PE, m.PD))
+            elif getattr(m, 'C', None) == 0:
+                est[m_type].append((t, m.Roll, m.Pitch, m.Yaw, m.VN, m.VE, m.VD, m.PN, m.PE, m.PD))
+        if armed_at is not None:
+            armed_spans.append((armed_at, float('inf')))
+        if len(sim) < 2 or len(sim2) < 2:
+            raise NotAchievedException("Insufficient SIM/SIM2 truth data in log")
+        sim = np.array(sim)
+        sim2 = np.array(sim2)
+        sim_yaw_unwrapped = np.degrees(np.unwrap(np.radians(sim[:, 3])))
+
+        out = {}
+        for key in ekf_message_types:
+            rows = np.array(est[key])
+            if len(rows) == 0:
+                raise NotAchievedException("No %s messages in log" % key)
+            est_t = rows[:, 0]
+            armed = np.zeros(len(est_t), dtype=bool)
+            for (t0, t1) in armed_spans:
+                armed |= (est_t >= t0) & (est_t <= t1)
+            armed &= (est_t >= max(sim[0, 0], sim2[0, 0])) & (est_t <= min(sim[-1, 0], sim2[-1, 0]))
+            armed &= est_t >= ignore_before_time_s
+            rows = rows[armed]
+            est_t = rows[:, 0]
+            if len(est_t) < min_samples:
+                raise NotAchievedException(
+                    "Insufficient %s/truth samples for RMS (%u)" % (key, len(est_t)))
+
+            roll_err = rows[:, 1] - np.interp(est_t, sim[:, 0], sim[:, 1])
+            pitch_err = rows[:, 2] - np.interp(est_t, sim[:, 0], sim[:, 2])
+            yaw_err = (rows[:, 3] - np.interp(est_t, sim[:, 0], sim_yaw_unwrapped) + 180) % 360 - 180
+            vn_err = rows[:, 4] - np.interp(est_t, sim2[:, 0], sim2[:, 1])
+            ve_err = rows[:, 5] - np.interp(est_t, sim2[:, 0], sim2[:, 2])
+            vd_err = rows[:, 6] - np.interp(est_t, sim2[:, 0], sim2[:, 3])
+            pn_err = rows[:, 7] - np.interp(est_t, sim2[:, 0], sim2[:, 4])
+            pe_err = rows[:, 8] - np.interp(est_t, sim2[:, 0], sim2[:, 5])
+            pd_err = rows[:, 9] - np.interp(est_t, sim2[:, 0], sim2[:, 6])
+            nbase = min(10, len(est_t))
+            pn_err -= pn_err[:nbase].mean()
+            pe_err -= pe_err[:nbase].mean()
+            pd_err -= pd_err[:nbase].mean()
+
+            att_err = np.sqrt(roll_err**2 + pitch_err**2 + yaw_err**2)
+            pos_err = np.sqrt(pn_err**2 + pe_err**2 + pd_err**2)
+            vel_err = np.sqrt(vn_err**2 + ve_err**2 + vd_err**2)
+            out[key] = {
+                "samples": int(len(est_t)),
+                "rms_roll_deg": float(np.sqrt(np.mean(roll_err**2))),
+                "rms_pitch_deg": float(np.sqrt(np.mean(pitch_err**2))),
+                "rms_yaw_deg": float(np.sqrt(np.mean(yaw_err**2))),
+                "rms_attitude_deg": float(np.sqrt(np.mean(att_err**2))),
+                "rms_pos_n_m": float(np.sqrt(np.mean(pn_err**2))),
+                "rms_pos_e_m": float(np.sqrt(np.mean(pe_err**2))),
+                "rms_pos_d_m": float(np.sqrt(np.mean(pd_err**2))),
+                "rms_position_m": float(np.sqrt(np.mean(pos_err**2))),
+                "rms_vel_ms": float(np.sqrt(np.mean(vel_err**2))),
+            }
+            self.progress(
+                "%s RMS att=%.3fdeg pos=%.3fm vel=%.3fm/s (n=%u)" % (
+                    key,
+                    out[key]["rms_attitude_deg"],
+                    out[key]["rms_position_m"],
+                    out[key]["rms_vel_ms"],
+                    out[key]["samples"]))
+        return out
 
     def dfreader_for_current_onboard_log(self):
         return self.dfreader_for_path(self.current_onboard_log_filepath())

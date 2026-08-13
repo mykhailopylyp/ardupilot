@@ -57,7 +57,7 @@ def _vehicle_index(vehicle):
 # note that AP_NavEKF3_core.h is needed for AP_NavEKF3_feature.h
 _vehicle_macros = ['APM_BUILD_DIRECTORY', 'AP_BUILD_TARGET_NAME',
                    'APM_BUILD_TYPE', 'APM_BUILD_COPTER_OR_HELI',
-                   'AP_NavEKF3_core.h', 'lua_generated_bindings.h',
+                   'AP_NavEKF3_core.h', 'AP_NavUKF_core.h', 'lua_generated_bindings.h',
                    'AP_InertialSensor_rate_config.h']
 _macros_re = re.compile(r'\b(%s)\b' % '|'.join(_vehicle_macros))
 

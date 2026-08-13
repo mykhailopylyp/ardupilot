@@ -28,6 +28,7 @@
 #include "AP_AHRS_Backend.h"
 #include "AP_AHRS_NavEKF2.h"
 #include "AP_AHRS_NavEKF3.h"
+#include "AP_AHRS_NavUKF.h"
 #include <AP_NavEKF/AP_Nav_Common.h>              // definitions shared by inertial and ekf nav filters
 
 #include "AP_AHRS_DCM.h"
@@ -76,6 +77,9 @@ public:
 #endif
 #if AP_AHRS_NAVEKF3_ENABLED
     AP_AHRS_NavEKF3 ekf3;
+#endif
+#if AP_AHRS_NAVUKF_ENABLED
+    AP_AHRS_NavUKF ekf_ukf;
 #endif
 
     // periodically checks to see if we should update the AHRS
@@ -507,6 +511,9 @@ public:
 #endif
 #if AP_AHRS_NAVEKF3_ENABLED
         THREE = 3,
+#endif
+#if AP_AHRS_NAVUKF_ENABLED
+        UKF = 4,
 #endif
 #if AP_AHRS_NAVEKF2_ENABLED
         TWO = 2,
@@ -1028,6 +1035,9 @@ private:
 #if AP_AHRS_NAVEKF3_ENABLED
     struct AP_AHRS_Backend::Estimates ekf3_estimates;
 #endif
+#if AP_AHRS_NAVUKF_ENABLED
+    struct AP_AHRS_Backend::Estimates ekf_ukf_estimates;
+#endif
 #if AP_AHRS_NAVEKF2_ENABLED
     struct AP_AHRS_Backend::Estimates ekf2_estimates;
 #endif
@@ -1050,6 +1060,7 @@ private:
     (!!(AP_AHRS_DCM_ENABLED) +                  \
      !!(AP_AHRS_NAVEKF2_ENABLED) +              \
      !!(AP_AHRS_NAVEKF3_ENABLED) +              \
+     !!(AP_AHRS_NAVUKF_ENABLED) +               \
      !!(AP_AHRS_SIM_ENABLED) +                  \
      !!(AP_AHRS_EXTERNAL_ENABLED))
 
@@ -1066,6 +1077,9 @@ private:
 #if AP_AHRS_NAVEKF3_ENABLED
         { ekf3, ekf3_estimates },
 #endif  // AP_AHRS_NAVEKF3_ENABLED
+#if AP_AHRS_NAVUKF_ENABLED
+        { ekf_ukf, ekf_ukf_estimates },
+#endif  // AP_AHRS_NAVUKF_ENABLED
 #if AP_AHRS_SIM_ENABLED
         { sim, sim_estimates },
 #endif  // AP_AHRS_SIM_ENABLED

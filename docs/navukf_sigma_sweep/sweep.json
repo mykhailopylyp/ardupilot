@@ -1,0 +1,97 @@
+{
+  "generated_unix": 1786546566.8335202,
+  "notes": "UKF primary, USE_UT=1, medium GPS CIRCLE window; tune ALPHA/BETA/KAPPA",
+  "results": [
+    {
+      "UKF_ALPHA": 0.3,
+      "UKF_BETA": 2.0,
+      "UKF_KAPPA": 0.0,
+      "left_ukf": false,
+      "ukf_att_deg": 1.6909266224219508,
+      "ukf_pos_m": 2.4313754593120334,
+      "ukf_vel_ms": 0.3808094473628853,
+      "xkf_att_deg": 1.663910243958759,
+      "xkf_pos_m": 2.4354171037458734,
+      "xkf_vel_ms": 0.376162234961521,
+      "error": null
+    },
+    {
+      "UKF_ALPHA": 0.4,
+      "UKF_BETA": 2.0,
+      "UKF_KAPPA": 0.0,
+      "left_ukf": false,
+      "ukf_att_deg": 1.7393993117268425,
+      "ukf_pos_m": 2.423387310818166,
+      "ukf_vel_ms": 0.3801185108896986,
+      "xkf_att_deg": 1.7108038543850594,
+      "xkf_pos_m": 2.4237871961345787,
+      "xkf_vel_ms": 0.3746054201854166,
+      "error": null
+    },
+    {
+      "UKF_ALPHA": 0.5,
+      "UKF_BETA": 2.0,
+      "UKF_KAPPA": 0.0,
+      "left_ukf": false,
+      "ukf_att_deg": 1.829403239732629,
+      "ukf_pos_m": 2.76178592927968,
+      "ukf_vel_ms": 0.3879858906179513,
+      "xkf_att_deg": 1.7831878400664762,
+      "xkf_pos_m": 2.7710415700557567,
+      "xkf_vel_ms": 0.3788380168620905,
+      "error": null
+    },
+    {
+      "UKF_ALPHA": 0.6,
+      "UKF_BETA": 2.0,
+      "UKF_KAPPA": 0.0,
+      "left_ukf": false,
+      "ukf_att_deg": 1.772017719445706,
+      "ukf_pos_m": 2.4218443883379313,
+      "ukf_vel_ms": 0.3800987023778389,
+      "xkf_att_deg": 1.702571671198165,
+      "xkf_pos_m": 2.4188460335523367,
+      "xkf_vel_ms": 0.3729955508701154,
+      "error": null
+    },
+    {
+      "UKF_ALPHA": 0.7,
+      "UKF_BETA": 2.0,
+      "UKF_KAPPA": 0.0,
+      "left_ukf": false,
+      "ukf_att_deg": 1.8023337654197966,
+      "ukf_pos_m": 2.7882535262274137,
+      "ukf_vel_ms": 0.39252477056404067,
+      "xkf_att_deg": 1.7285384341527101,
+      "xkf_pos_m": 2.7898254298714007,
+      "xkf_vel_ms": 0.382279335317654,
+      "error": null
+    },
+    {
+      "UKF_ALPHA": 0.5,
+      "UKF_BETA": 2.0,
+      "UKF_KAPPA": 3.0,
+      "left_ukf": false,
+      "ukf_att_deg": 1.8344306307411788,
+      "ukf_pos_m": 2.7633499529696235,
+      "ukf_vel_ms": 0.38939889634521807,
+      "xkf_att_deg": 1.7895309741008758,
+      "xkf_pos_m": 2.7715241560252197,
+      "xkf_vel_ms": 0.38035250193844333,
+      "error": null
+    },
+    {
+      "UKF_ALPHA": 0.5,
+      "UKF_BETA": 0.0,
+      "UKF_KAPPA": 0.0,
+      "left_ukf": false,
+      "ukf_att_deg": 1.830028942881638,
+      "ukf_pos_m": 2.762566464187182,
+      "ukf_vel_ms": 0.38809687548520694,
+      "xkf_att_deg": 1.7833613781956121,
+      "xkf_pos_m": 2.7716565842917418,
+      "xkf_vel_ms": 0.3788459848321967,
+      "error": null
+    }
+  ]
+}

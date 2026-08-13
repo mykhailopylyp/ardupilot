@@ -1,0 +1,733 @@
+{
+  "generated_unix": 1786548543.6577046,
+  "notes": "Tune UKF_ALPHA/BETA/KAPPA on held-in complex profiles; score = mean(UKF_primary/EKF_primary) over att/pos/vel. Validate on held-out profiles with winning params. Medium GPS; UKF_USE_UT=1.",
+  "tune_profiles": [
+    "tune_bank",
+    "tune_vert",
+    "tune_acro"
+  ],
+  "val_profiles": [
+    "val_mixed",
+    "val_endurance"
+  ],
+  "combos": [
+    {
+      "params": {
+        "UKF_ALPHA": 0.35,
+        "UKF_BETA": 2.0,
+        "UKF_KAPPA": 0.0
+      },
+      "failed": false,
+      "mean_score": 0.9432663355689986,
+      "profiles": [
+        {
+          "profile": "tune_bank",
+          "ukf": {
+            "samples": 2496,
+            "rms_roll_deg": 0.3644763762524999,
+            "rms_pitch_deg": 0.44381138975863066,
+            "rms_yaw_deg": 1.0132625531433397,
+            "rms_attitude_deg": 1.164694200263829,
+            "rms_pos_n_m": 1.654685740660968,
+            "rms_pos_e_m": 3.6328900286415102,
+            "rms_pos_d_m": 0.15954611193848509,
+            "rms_position_m": 3.9951633035940266,
+            "rms_vel_ms": 0.410468793869934
+          },
+          "ekf": {
+            "samples": 2513,
+            "rms_roll_deg": 0.3252143068868583,
+            "rms_pitch_deg": 0.26548935963534614,
+            "rms_yaw_deg": 1.2472703662375328,
+            "rms_attitude_deg": 1.3160289935931482,
+            "rms_pos_n_m": 1.8258904975951669,
+            "rms_pos_e_m": 3.41658756684215,
+            "rms_pos_d_m": 0.21595411363711398,
+            "rms_position_m": 3.8798947009301017,
+            "rms_vel_ms": 0.3924429602344854
+          },
+          "ratio_att": 0.8850064899283636,
+          "ratio_pos": 1.029709209024743,
+          "ratio_vel": 1.0459323658772683,
+          "score": 0.9868826882767916,
+          "left_ukf": false
+        },
+        {
+          "profile": "tune_vert",
+          "ukf": {
+            "samples": 2618,
+            "rms_roll_deg": 0.24604713008190754,
+            "rms_pitch_deg": 0.26021924704314936,
+            "rms_yaw_deg": 1.0244697896401849,
+            "rms_attitude_deg": 1.0852610730320382,
+            "rms_pos_n_m": 2.0245055829412473,
+            "rms_pos_e_m": 1.5219764632808388,
+            "rms_pos_d_m": 0.8281004943336447,
+            "rms_position_m": 2.664729937321371,
+            "rms_vel_ms": 0.5024983685744278
+          },
+          "ekf": {
+            "samples": 2626,
+            "rms_roll_deg": 0.3558652286037087,
+            "rms_pitch_deg": 0.21306444680425463,
+            "rms_yaw_deg": 1.0712210896919137,
+            "rms_attitude_deg": 1.1487171725111032,
+            "rms_pos_n_m": 1.841895964443978,
+            "rms_pos_e_m": 1.4567731469781997,
+            "rms_pos_d_m": 0.7534846105301349,
+            "rms_position_m": 2.4662740731511428,
+            "rms_vel_ms": 0.4981220403961766
+          },
+          "ratio_att": 0.9447591617871007,
+          "ratio_pos": 1.0804678873004014,
+          "ratio_vel": 1.0087856545652356,
+          "score": 1.0113375678842458,
+          "left_ukf": false
+        },
+        {
+          "profile": "tune_acro",
+          "ukf": {
+            "samples": 2004,
+            "rms_roll_deg": 1.4085393617973672,
+            "rms_pitch_deg": 1.086729216144278,
+            "rms_yaw_deg": 3.555648383789055,
+            "rms_attitude_deg": 3.9758771299042692,
+            "rms_pos_n_m": 2.0688860971841936,
+            "rms_pos_e_m": 1.9176119994514957,
+            "rms_pos_d_m": 1.0286885710453921,
+            "rms_position_m": 3.002619796071727,
+            "rms_vel_ms": 1.4889546250829737
+          },
+          "ekf": {
+            "samples": 1996,
+            "rms_roll_deg": 13.771517404892844,
+            "rms_pitch_deg": 0.8940515680948307,
+            "rms_yaw_deg": 3.3993975359193334,
+            "rms_attitude_deg": 14.213019504907946,
+            "rms_pos_n_m": 1.8510342342869555,
+            "rms_pos_e_m": 1.7553693959259224,
+            "rms_pos_d_m": 0.7533412433337586,
+            "rms_position_m": 2.6599196381776813,
+            "rms_vel_ms": 1.3708392169992327
+          },
+          "ratio_att": 0.27973486763536387,
+          "ratio_pos": 1.1288385381931427,
+          "ratio_vel": 1.086162845809369,
+          "score": 0.8315787505459585,
+          "left_ukf": false
+        }
+      ]
+    },
+    {
+      "params": {
+        "UKF_ALPHA": 0.45,
+        "UKF_BETA": 2.0,
+        "UKF_KAPPA": 0.0
+      },
+      "failed": false,
+      "mean_score": 0.9439372324328316,
+      "profiles": [
+        {
+          "profile": "tune_bank",
+          "ukf": {
+            "samples": 2496,
+            "rms_roll_deg": 0.3606563416812073,
+            "rms_pitch_deg": 0.44408415551501856,
+            "rms_yaw_deg": 1.0093257261530362,
+            "rms_attitude_deg": 1.160181949285849,
+            "rms_pos_n_m": 1.6113481650187358,
+            "rms_pos_e_m": 3.655363794953066,
+            "rms_pos_d_m": 0.1637630406210021,
+            "rms_position_m": 3.998117771631592,
+            "rms_vel_ms": 0.41023623510357465
+          },
+          "ekf": {
+            "samples": 2513,
+            "rms_roll_deg": 0.3252143068868583,
+            "rms_pitch_deg": 0.26548935963534614,
+            "rms_yaw_deg": 1.2472703662375328,
+            "rms_attitude_deg": 1.3160289935931482,
+            "rms_pos_n_m": 1.8258904975951669,
+            "rms_pos_e_m": 3.41658756684215,
+            "rms_pos_d_m": 0.21595411363711398,
+            "rms_position_m": 3.8798947009301017,
+            "rms_vel_ms": 0.3924429602344854
+          },
+          "ratio_att": 0.8815778033265128,
+          "ratio_pos": 1.0304706905249643,
+          "ratio_vel": 1.0453397733481007,
+          "score": 0.9857960890665259,
+          "left_ukf": false
+        },
+        {
+          "profile": "tune_vert",
+          "ukf": {
+            "samples": 2681,
+            "rms_roll_deg": 0.39292313033006526,
+            "rms_pitch_deg": 0.265576863631009,
+            "rms_yaw_deg": 1.0410834169696237,
+            "rms_attitude_deg": 1.144016755967153,
+            "rms_pos_n_m": 1.844017465347533,
+            "rms_pos_e_m": 1.4948999515893249,
+            "rms_pos_d_m": 0.8466145324444375,
+            "rms_position_m": 2.520294118612869,
+            "rms_vel_ms": 0.5071963269956429
+          },
+          "ekf": {
+            "samples": 2626,
+            "rms_roll_deg": 0.3558652286037087,
+            "rms_pitch_deg": 0.21306444680425463,
+            "rms_yaw_deg": 1.0712210896919137,
+            "rms_attitude_deg": 1.1487171725111032,
+            "rms_pos_n_m": 1.841895964443978,
+            "rms_pos_e_m": 1.4567731469781997,
+            "rms_pos_d_m": 0.7534846105301349,
+            "rms_position_m": 2.4662740731511428,
+            "rms_vel_ms": 0.4981220403961766
+          },
+          "ratio_att": 0.9959081167615219,
+          "ratio_pos": 1.0219035045819969,
+          "ratio_vel": 1.0182169947594553,
+          "score": 1.0120095387009913,
+          "left_ukf": false
+        },
+        {
+          "profile": "tune_acro",
+          "ukf": {
+            "samples": 1971,
+            "rms_roll_deg": 1.3856026388380425,
+            "rms_pitch_deg": 1.1683589813429034,
+            "rms_yaw_deg": 3.3700693731596405,
+            "rms_attitude_deg": 3.8265291011500473,
+            "rms_pos_n_m": 2.0998167236257035,
+            "rms_pos_e_m": 1.8436612680398154,
+            "rms_pos_d_m": 0.9031057830189039,
+            "rms_position_m": 2.936650677116799,
+            "rms_vel_ms": 1.547339982547975
+          },
+          "ekf": {
+            "samples": 1996,
+            "rms_roll_deg": 13.771517404892844,
+            "rms_pitch_deg": 0.8940515680948307,
+            "rms_yaw_deg": 3.3993975359193334,
+            "rms_attitude_deg": 14.213019504907946,
+            "rms_pos_n_m": 1.8510342342869555,
+            "rms_pos_e_m": 1.7553693959259224,
+            "rms_pos_d_m": 0.7533412433337586,
+            "rms_position_m": 2.6599196381776813,
+            "rms_vel_ms": 1.3708392169992327
+          },
+          "ratio_att": 0.2692270351017738,
+          "ratio_pos": 1.1040373682600075,
+          "ratio_vel": 1.1287538052311508,
+          "score": 0.8340060695309773,
+          "left_ukf": false
+        }
+      ]
+    },
+    {
+      "params": {
+        "UKF_ALPHA": 0.5,
+        "UKF_BETA": 2.0,
+        "UKF_KAPPA": 0.0
+      },
+      "failed": false,
+      "mean_score": 0.9639970891048782,
+      "profiles": [
+        {
+          "profile": "tune_bank",
+          "ukf": {
+            "samples": 2542,
+            "rms_roll_deg": 0.4343928723915472,
+            "rms_pitch_deg": 0.43437109189724304,
+            "rms_yaw_deg": 1.1687599593772817,
+            "rms_attitude_deg": 1.320369363361695,
+            "rms_pos_n_m": 1.826309351282599,
+            "rms_pos_e_m": 3.4474357418589725,
+            "rms_pos_d_m": 0.14359804054570158,
+            "rms_position_m": 3.9039517719968777,
+            "rms_vel_ms": 0.4067722917740007
+          },
+          "ekf": {
+            "samples": 2513,
+            "rms_roll_deg": 0.3252143068868583,
+            "rms_pitch_deg": 0.26548935963534614,
+            "rms_yaw_deg": 1.2472703662375328,
+            "rms_attitude_deg": 1.3160289935931482,
+            "rms_pos_n_m": 1.8258904975951669,
+            "rms_pos_e_m": 3.41658756684215,
+            "rms_pos_d_m": 0.21595411363711398,
+            "rms_position_m": 3.8798947009301017,
+            "rms_vel_ms": 0.3924429602344854
+          },
+          "ratio_att": 1.0032980806575518,
+          "ratio_pos": 1.0062004443215968,
+          "ratio_vel": 1.0365131573030473,
+          "score": 1.0153372274273986,
+          "left_ukf": false
+        },
+        {
+          "profile": "tune_vert",
+          "ukf": {
+            "samples": 2613,
+            "rms_roll_deg": 0.24098368062663122,
+            "rms_pitch_deg": 0.2560684077898802,
+            "rms_yaw_deg": 1.0273483082666144,
+            "rms_attitude_deg": 1.0858585130184673,
+            "rms_pos_n_m": 2.026711087037762,
+            "rms_pos_e_m": 1.519129857096844,
+            "rms_pos_d_m": 0.8293635384898773,
+            "rms_position_m": 2.6651748970792357,
+            "rms_vel_ms": 0.5030515101406393
+          },
+          "ekf": {
+            "samples": 2626,
+            "rms_roll_deg": 0.3558652286037087,
+            "rms_pitch_deg": 0.21306444680425463,
+            "rms_yaw_deg": 1.0712210896919137,
+            "rms_attitude_deg": 1.1487171725111032,
+            "rms_pos_n_m": 1.841895964443978,
+            "rms_pos_e_m": 1.4567731469781997,
+            "rms_pos_d_m": 0.7534846105301349,
+            "rms_position_m": 2.4662740731511428,
+            "rms_vel_ms": 0.4981220403961766
+          },
+          "ratio_att": 0.9452792549838648,
+          "ratio_pos": 1.0806483051066416,
+          "ratio_vel": 1.0098961084728195,
+          "score": 1.011941222854442,
+          "left_ukf": false
+        },
+        {
+          "profile": "tune_acro",
+          "ukf": {
+            "samples": 1948,
+            "rms_roll_deg": 1.6453563553024892,
+            "rms_pitch_deg": 1.1740770764815687,
+            "rms_yaw_deg": 3.5858576809472287,
+            "rms_attitude_deg": 4.1163126491390365,
+            "rms_pos_n_m": 2.1047155777628728,
+            "rms_pos_e_m": 1.971345433447955,
+            "rms_pos_d_m": 1.0602784371717673,
+            "rms_position_m": 3.0724942384950396,
+            "rms_vel_ms": 1.575663019204293
+          },
+          "ekf": {
+            "samples": 1996,
+            "rms_roll_deg": 13.771517404892844,
+            "rms_pitch_deg": 0.8940515680948307,
+            "rms_yaw_deg": 3.3993975359193334,
+            "rms_attitude_deg": 14.213019504907946,
+            "rms_pos_n_m": 1.8510342342869555,
+            "rms_pos_e_m": 1.7553693959259224,
+            "rms_pos_d_m": 0.7533412433337586,
+            "rms_position_m": 2.6599196381776813,
+            "rms_vel_ms": 1.3708392169992327
+          },
+          "ratio_att": 0.28961563358986586,
+          "ratio_pos": 1.1551079192001508,
+          "ratio_vel": 1.1494148983083659,
+          "score": 0.8647128170327942,
+          "left_ukf": false
+        }
+      ]
+    },
+    {
+      "params": {
+        "UKF_ALPHA": 0.55,
+        "UKF_BETA": 2.0,
+        "UKF_KAPPA": 0.0
+      },
+      "failed": false,
+      "mean_score": 0.9512291623569897,
+      "profiles": [
+        {
+          "profile": "tune_bank",
+          "ukf": {
+            "samples": 2516,
+            "rms_roll_deg": 0.4282478072561655,
+            "rms_pitch_deg": 0.4350161720583561,
+            "rms_yaw_deg": 1.1771377232065343,
+            "rms_attitude_deg": 1.326004703524042,
+            "rms_pos_n_m": 1.8315028122472508,
+            "rms_pos_e_m": 3.490100124396779,
+            "rms_pos_d_m": 0.15844557036360557,
+            "rms_position_m": 3.9446554258074116,
+            "rms_vel_ms": 0.40990325067739897
+          },
+          "ekf": {
+            "samples": 2513,
+            "rms_roll_deg": 0.3252143068868583,
+            "rms_pitch_deg": 0.26548935963534614,
+            "rms_yaw_deg": 1.2472703662375328,
+            "rms_attitude_deg": 1.3160289935931482,
+            "rms_pos_n_m": 1.8258904975951669,
+            "rms_pos_e_m": 3.41658756684215,
+            "rms_pos_d_m": 0.21595411363711398,
+            "rms_position_m": 3.8798947009301017,
+            "rms_vel_ms": 0.3924429602344854
+          },
+          "ratio_att": 1.0075801596921183,
+          "ratio_pos": 1.0166913614593163,
+          "ratio_vel": 1.0444912820769698,
+          "score": 1.022920934409468,
+          "left_ukf": false
+        },
+        {
+          "profile": "tune_vert",
+          "ukf": {
+            "samples": 2661,
+            "rms_roll_deg": 0.3940385336839648,
+            "rms_pitch_deg": 0.2631466998548424,
+            "rms_yaw_deg": 1.0465108362923259,
+            "rms_attitude_deg": 1.148780867767899,
+            "rms_pos_n_m": 1.8479327446760676,
+            "rms_pos_e_m": 1.4788769572709115,
+            "rms_pos_d_m": 0.8440027838510816,
+            "rms_position_m": 2.512821757057446,
+            "rms_vel_ms": 0.5090177364906386
+          },
+          "ekf": {
+            "samples": 2626,
+            "rms_roll_deg": 0.3558652286037087,
+            "rms_pitch_deg": 0.21306444680425463,
+            "rms_yaw_deg": 1.0712210896919137,
+            "rms_attitude_deg": 1.1487171725111032,
+            "rms_pos_n_m": 1.841895964443978,
+            "rms_pos_e_m": 1.4567731469781997,
+            "rms_pos_d_m": 0.7534846105301349,
+            "rms_position_m": 2.4662740731511428,
+            "rms_vel_ms": 0.4981220403961766
+          },
+          "ratio_att": 1.000055449033339,
+          "ratio_pos": 1.0188736865918675,
+          "ratio_vel": 1.021873547465991,
+          "score": 1.0136008943637325,
+          "left_ukf": false
+        },
+        {
+          "profile": "tune_acro",
+          "ukf": {
+            "samples": 1971,
+            "rms_roll_deg": 1.8536177551868636,
+            "rms_pitch_deg": 1.1227068968594198,
+            "rms_yaw_deg": 3.7142906111106724,
+            "rms_attitude_deg": 4.300270259226108,
+            "rms_pos_n_m": 1.8447297594568541,
+            "rms_pos_e_m": 1.7414300722550382,
+            "rms_pos_d_m": 1.0357208932247028,
+            "rms_position_m": 2.740132177585984,
+            "rms_vel_ms": 1.5336708521082068
+          },
+          "ekf": {
+            "samples": 1996,
+            "rms_roll_deg": 13.771517404892844,
+            "rms_pitch_deg": 0.8940515680948307,
+            "rms_yaw_deg": 3.3993975359193334,
+            "rms_attitude_deg": 14.213019504907946,
+            "rms_pos_n_m": 1.8510342342869555,
+            "rms_pos_e_m": 1.7553693959259224,
+            "rms_pos_d_m": 0.7533412433337586,
+            "rms_position_m": 2.6599196381776813,
+            "rms_vel_ms": 1.3708392169992327
+          },
+          "ratio_att": 0.3025585279567911,
+          "ratio_pos": 1.030156001052444,
+          "ratio_vel": 1.1187824458840714,
+          "score": 0.8171656582977688,
+          "left_ukf": false
+        }
+      ]
+    },
+    {
+      "params": {
+        "UKF_ALPHA": 0.4,
+        "UKF_BETA": 2.0,
+        "UKF_KAPPA": 3.0
+      },
+      "failed": false,
+      "mean_score": 0.955038943330946,
+      "profiles": [
+        {
+          "profile": "tune_bank",
+          "ukf": {
+            "samples": 2516,
+            "rms_roll_deg": 0.42763022263773115,
+            "rms_pitch_deg": 0.43431066665111,
+            "rms_yaw_deg": 1.1754077870334003,
+            "rms_attitude_deg": 1.324038076604628,
+            "rms_pos_n_m": 1.834352688504119,
+            "rms_pos_e_m": 3.491038046761913,
+            "rms_pos_d_m": 0.15477232964826856,
+            "rms_position_m": 3.9466632620210045,
+            "rms_vel_ms": 0.409730355974523
+          },
+          "ekf": {
+            "samples": 2513,
+            "rms_roll_deg": 0.3252143068868583,
+            "rms_pitch_deg": 0.26548935963534614,
+            "rms_yaw_deg": 1.2472703662375328,
+            "rms_attitude_deg": 1.3160289935931482,
+            "rms_pos_n_m": 1.8258904975951669,
+            "rms_pos_e_m": 3.41658756684215,
+            "rms_pos_d_m": 0.21595411363711398,
+            "rms_position_m": 3.8798947009301017,
+            "rms_vel_ms": 0.3924429602344854
+          },
+          "ratio_att": 1.0060857952601885,
+          "ratio_pos": 1.0172088590638546,
+          "ratio_vel": 1.0440507219946267,
+          "score": 1.02244845877289,
+          "left_ukf": false
+        },
+        {
+          "profile": "tune_vert",
+          "ukf": {
+            "samples": 2616,
+            "rms_roll_deg": 0.24413103402414915,
+            "rms_pitch_deg": 0.2593036428685354,
+            "rms_yaw_deg": 1.0248650802528636,
+            "rms_attitude_deg": 1.0849823840506823,
+            "rms_pos_n_m": 2.0470030928968317,
+            "rms_pos_e_m": 1.522234197215997,
+            "rms_pos_d_m": 0.8319616395925779,
+            "rms_position_m": 2.6832030827458064,
+            "rms_vel_ms": 0.5026389076854169
+          },
+          "ekf": {
+            "samples": 2626,
+            "rms_roll_deg": 0.3558652286037087,
+            "rms_pitch_deg": 0.21306444680425463,
+            "rms_yaw_deg": 1.0712210896919137,
+            "rms_attitude_deg": 1.1487171725111032,
+            "rms_pos_n_m": 1.841895964443978,
+            "rms_pos_e_m": 1.4567731469781997,
+            "rms_pos_d_m": 0.7534846105301349,
+            "rms_position_m": 2.4662740731511428,
+            "rms_vel_ms": 0.4981220403961766
+          },
+          "ratio_att": 0.9445165529117178,
+          "ratio_pos": 1.087958192463782,
+          "ratio_vel": 1.009067792474406,
+          "score": 1.0138475126166353,
+          "left_ukf": false
+        },
+        {
+          "profile": "tune_acro",
+          "ukf": {
+            "samples": 1999,
+            "rms_roll_deg": 1.4042546476895774,
+            "rms_pitch_deg": 1.092019827499403,
+            "rms_yaw_deg": 3.551198157548671,
+            "rms_attitude_deg": 3.971831664784735,
+            "rms_pos_n_m": 2.036961139757714,
+            "rms_pos_e_m": 1.912859524020874,
+            "rms_pos_d_m": 1.0252757703090702,
+            "rms_position_m": 2.9764799090037997,
+            "rms_vel_ms": 1.491474607590765
+          },
+          "ekf": {
+            "samples": 1996,
+            "rms_roll_deg": 13.771517404892844,
+            "rms_pitch_deg": 0.8940515680948307,
+            "rms_yaw_deg": 3.3993975359193334,
+            "rms_attitude_deg": 14.213019504907946,
+            "rms_pos_n_m": 1.8510342342869555,
+            "rms_pos_e_m": 1.7553693959259224,
+            "rms_pos_d_m": 0.7533412433337586,
+            "rms_position_m": 2.6599196381776813,
+            "rms_vel_ms": 1.3708392169992327
+          },
+          "ratio_att": 0.2794502366941246,
+          "ratio_pos": 1.1190112160843306,
+          "ratio_vel": 1.0880011230314837,
+          "score": 0.8288208586033129,
+          "left_ukf": false
+        }
+      ]
+    },
+    {
+      "params": {
+        "UKF_ALPHA": 0.5,
+        "UKF_BETA": 0.0,
+        "UKF_KAPPA": 0.0
+      },
+      "failed": false,
+      "mean_score": 0.9576619863597678,
+      "profiles": [
+        {
+          "profile": "tune_bank",
+          "ukf": {
+            "samples": 2516,
+            "rms_roll_deg": 0.42730163259064013,
+            "rms_pitch_deg": 0.43419877603065427,
+            "rms_yaw_deg": 1.1747368713934219,
+            "rms_attitude_deg": 1.323299655910312,
+            "rms_pos_n_m": 1.8350403127435453,
+            "rms_pos_e_m": 3.489307493236706,
+            "rms_pos_d_m": 0.15705267810370957,
+            "rms_position_m": 3.9455424564248833,
+            "rms_vel_ms": 0.4092855957802378
+          },
+          "ekf": {
+            "samples": 2513,
+            "rms_roll_deg": 0.3252143068868583,
+            "rms_pitch_deg": 0.26548935963534614,
+            "rms_yaw_deg": 1.2472703662375328,
+            "rms_attitude_deg": 1.3160289935931482,
+            "rms_pos_n_m": 1.8258904975951669,
+            "rms_pos_e_m": 3.41658756684215,
+            "rms_pos_d_m": 0.21595411363711398,
+            "rms_position_m": 3.8798947009301017,
+            "rms_vel_ms": 0.3924429602344854
+          },
+          "ratio_att": 1.0055246976719812,
+          "ratio_pos": 1.0169199838024068,
+          "ratio_vel": 1.0429174103051535,
+          "score": 1.0217873639265138,
+          "left_ukf": false
+        },
+        {
+          "profile": "tune_vert",
+          "ukf": {
+            "samples": 2621,
+            "rms_roll_deg": 0.24157754455730776,
+            "rms_pitch_deg": 0.25908100727899264,
+            "rms_yaw_deg": 1.0273712486554725,
+            "rms_attitude_deg": 1.086726442547038,
+            "rms_pos_n_m": 2.046075526551843,
+            "rms_pos_e_m": 1.5255649407239018,
+            "rms_pos_d_m": 0.8297355655771635,
+            "rms_position_m": 2.683697925904475,
+            "rms_vel_ms": 0.5022624641108864
+          },
+          "ekf": {
+            "samples": 2626,
+            "rms_roll_deg": 0.3558652286037087,
+            "rms_pitch_deg": 0.21306444680425463,
+            "rms_yaw_deg": 1.0712210896919137,
+            "rms_attitude_deg": 1.1487171725111032,
+            "rms_pos_n_m": 1.841895964443978,
+            "rms_pos_e_m": 1.4567731469781997,
+            "rms_pos_d_m": 0.7534846105301349,
+            "rms_position_m": 2.4662740731511428,
+            "rms_vel_ms": 0.4981220403961766
+          },
+          "ratio_att": 0.9460348191465153,
+          "ratio_pos": 1.0881588364895436,
+          "ratio_vel": 1.0083120668810734,
+          "score": 1.0141685741723776,
+          "left_ukf": false
+        },
+        {
+          "profile": "tune_acro",
+          "ukf": {
+            "samples": 1993,
+            "rms_roll_deg": 1.4774810577350492,
+            "rms_pitch_deg": 1.159605967992366,
+            "rms_yaw_deg": 3.4021491023765744,
+            "rms_attitude_deg": 3.8861619615979883,
+            "rms_pos_n_m": 2.1404880485145172,
+            "rms_pos_e_m": 1.8467155542467777,
+            "rms_pos_d_m": 0.8966646941047777,
+            "rms_position_m": 2.9658143903124627,
+            "rms_vel_ms": 1.538994410439471
+          },
+          "ekf": {
+            "samples": 1996,
+            "rms_roll_deg": 13.771517404892844,
+            "rms_pitch_deg": 0.8940515680948307,
+            "rms_yaw_deg": 3.3993975359193334,
+            "rms_attitude_deg": 14.213019504907946,
+            "rms_pos_n_m": 1.8510342342869555,
+            "rms_pos_e_m": 1.7553693959259224,
+            "rms_pos_d_m": 0.7533412433337586,
+            "rms_position_m": 2.6599196381776813,
+            "rms_vel_ms": 1.3708392169992327
+          },
+          "ratio_att": 0.27342268546497417,
+          "ratio_pos": 1.1150015014530104,
+          "ratio_vel": 1.122665876023251,
+          "score": 0.8370300209804119,
+          "left_ukf": false
+        }
+      ]
+    }
+  ],
+  "best_params": {
+    "UKF_ALPHA": 0.35,
+    "UKF_BETA": 2.0,
+    "UKF_KAPPA": 0.0
+  },
+  "best_tune_mean_score": 0.9432663355689986,
+  "validation": [
+    {
+      "profile": "val_mixed",
+      "ekf_primary": {
+        "samples": 3581,
+        "rms_roll_deg": 10.38684671039827,
+        "rms_pitch_deg": 0.8102334689613092,
+        "rms_yaw_deg": 3.1434853401559817,
+        "rms_attitude_deg": 10.88230503814849,
+        "rms_pos_n_m": 1.6843149668751294,
+        "rms_pos_e_m": 2.3839863590429897,
+        "rms_pos_d_m": 0.49695885864889183,
+        "rms_position_m": 2.960958624319534,
+        "rms_vel_ms": 1.0943868741128386
+      },
+      "ukf_primary": {
+        "samples": 3596,
+        "rms_roll_deg": 1.7676557236940518,
+        "rms_pitch_deg": 0.8555805488904007,
+        "rms_yaw_deg": 3.3101704266721854,
+        "rms_attitude_deg": 3.848876860431243,
+        "rms_pos_n_m": 1.9031000379961862,
+        "rms_pos_e_m": 1.7968371980042297,
+        "rms_pos_d_m": 0.5163305051270626,
+        "rms_position_m": 2.667772640476985,
+        "rms_vel_ms": 1.1561253966889098
+      },
+      "ratio_att": 0.35368213323728787,
+      "ratio_pos": 0.9009827488184078,
+      "ratio_vel": 1.0564138003081582,
+      "score": 0.7703595607879512,
+      "ukf_beats_ekf": true,
+      "left_ukf": false
+    },
+    {
+      "profile": "val_endurance",
+      "ekf_primary": {
+        "samples": 4686,
+        "rms_roll_deg": 0.37306930789517445,
+        "rms_pitch_deg": 0.40266414329057587,
+        "rms_yaw_deg": 1.0856067317859752,
+        "rms_attitude_deg": 1.2164954158912167,
+        "rms_pos_n_m": 1.939739202243122,
+        "rms_pos_e_m": 3.428692326962357,
+        "rms_pos_d_m": 0.29835976947702486,
+        "rms_position_m": 3.9506376444482614,
+        "rms_vel_ms": 0.5914819815524954
+      },
+      "ukf_primary": {
+        "samples": 4711,
+        "rms_roll_deg": 0.46712341820655634,
+        "rms_pitch_deg": 0.518069645827907,
+        "rms_yaw_deg": 1.0390297018327226,
+        "rms_attitude_deg": 1.251472399638053,
+        "rms_pos_n_m": 1.936498285811245,
+        "rms_pos_e_m": 3.494025802195049,
+        "rms_pos_d_m": 0.23979856610410571,
+        "rms_position_m": 4.001967674739544,
+        "rms_vel_ms": 0.601638953807734
+      },
+      "ratio_att": 1.0287522528156934,
+      "ratio_pos": 1.0129928469555833,
+      "ratio_vel": 1.0171720738281478,
+      "score": 1.019639057866475,
+      "ukf_beats_ekf": false,
+      "left_ukf": false
+    }
+  ],
+  "validation_mean_score": 0.894999309327213,
+  "validation_ukf_beats_ekf": true
+}

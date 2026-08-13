@@ -476,6 +476,12 @@ const AP_Param::Info Copter::var_info[] = {
     GOBJECTN(ahrs.ekf3.EKF3, NavEKF3, "EK3_", NavEKF3),
 #endif
 
+#if HAL_NAVUKF_AVAILABLE
+    // @Group: UKF_
+    // @Path: ../libraries/AP_NavUKF/AP_NavUKF.cpp
+    GOBJECTN(ahrs.ekf_ukf.UKF, NavUKF, "UKF_", NavUKF),
+#endif
+
 #if MODE_AUTO_ENABLED
     // @Group: MIS_
     // @Path: ../libraries/AP_Mission/AP_Mission.cpp

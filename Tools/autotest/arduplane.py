@@ -213,6 +213,849 @@ class AutoTestPlane(vehicle_test_suite.TestSuite):
         self.set_parameter("SIM_GPS1_ENABLE", 1)
         self.wait_ready_to_arm()
 
+    def NavUKFSmoke(self):
+        '''Smoke-test ArduPlane with AHRS_EKF_TYPE=4 (NavUKF), single core.'''
+        self.set_parameters({
+            "AHRS_EKF_TYPE": 4,
+            "UKF_ENABLE": 1,
+            "UKF_IMU_MASK": 1,
+        })
+        # Collect before reboot so we do not miss the AHRS activation text
+        # that arrives during wait_ready_to_arm / EKF bring-up.
+        self.context_collect("STATUSTEXT")
+        self.reboot_sitl()
+        self.wait_statustext("AHRS: UKF active", timeout=120, check_context=True)
+        self.wait_ready_to_arm()
+        self.takeoff()
+        self.change_mode('FBWA')
+        self.delay_sim_time(10, "short FBWA segment on UKF")
+        self.fly_RTL()
+        self.disarm_vehicle(force=True)
+
+    def NavUKFEKF3RMS(self):
+        '''Dual-estimator SITL flights: EKF3+UKF both running (IMU0 each).
+        Two runs - EKF3 primary then UKF primary - RMS vs SIM/SIM2 truth.
+        Writes JSON/Markdown under docs/navukf_rms_results/.
+        '''
+        self._navukf_ekf3_rms_flights(
+            out_subdir="navukf_rms_results",
+            use_ut=0,
+            medium_gps=False,
+            title="NavUKF vs EKF3 SITL RMS (vs SIM truth)",
+        )
+
+    def NavUKFEKF3RMS_UT(self):
+        '''Same as NavUKFEKF3RMS but UKF_USE_UT=1 and medium-quality GPS model.
+        Writes under docs/navukf_rms_results_ut_medium_gps/.
+        '''
+        self._navukf_ekf3_rms_flights(
+            out_subdir="navukf_rms_results_ut_medium_gps",
+            use_ut=1,
+            medium_gps=True,
+            title="NavUKF (UT) vs EKF3 SITL RMS - medium GPS",
+            ukf_alpha=0.35,
+            ukf_beta=2.0,
+            ukf_kappa=0.0,
+        )
+
+    def NavUKFEKF3RMS_UT_Complex(self):
+        '''Long dual-estimator RMS on a complex manoeuvre route (UT UKF).
+
+        Profile (after takeoff): FBWA left circuit, altitude changes, CIRCLE,
+        LOITER, ACRO rolls/loops, FBWB circuit, another altitude change, then RTL.
+        Writes docs/navukf_rms_results_ut_complex/.
+        '''
+        self._navukf_ekf3_rms_flights(
+            out_subdir="navukf_rms_results_ut_complex",
+            use_ut=1,
+            medium_gps=True,
+            title="NavUKF (UT) vs EKF3 SITL RMS - complex long route",
+            ukf_alpha=0.35,
+            ukf_beta=2.0,
+            ukf_kappa=0.0,
+            flight_profile="complex",
+        )
+
+    def NavUKFTuneValidate(self):
+        '''Tune UKF sigma params on several complex test flights; verify on held-out validation flights.
+
+        Tune set: tune_bank, tune_vert, tune_acro (EKF3 baseline + UKF primary per combo).
+        Validation set: val_mixed, val_endurance (dual EKF3/UKF primary with winning params).
+        Writes docs/navukf_tune_validate/.
+        '''
+        import json
+        import math
+        import os
+        import time
+
+        out_dir = os.path.join(self.rootdir(), "docs", "navukf_tune_validate")
+        os.makedirs(out_dir, exist_ok=True)
+
+        tune_profiles = ["tune_bank", "tune_vert", "tune_acro"]
+        val_profiles = ["val_mixed", "val_endurance"]
+        combos = [
+            {"UKF_ALPHA": 0.35, "UKF_BETA": 2.0, "UKF_KAPPA": 0.0},
+            {"UKF_ALPHA": 0.45, "UKF_BETA": 2.0, "UKF_KAPPA": 0.0},
+            {"UKF_ALPHA": 0.50, "UKF_BETA": 2.0, "UKF_KAPPA": 0.0},
+            {"UKF_ALPHA": 0.55, "UKF_BETA": 2.0, "UKF_KAPPA": 0.0},
+            {"UKF_ALPHA": 0.40, "UKF_BETA": 2.0, "UKF_KAPPA": 3.0},
+            {"UKF_ALPHA": 0.50, "UKF_BETA": 0.0, "UKF_KAPPA": 0.0},
+        ]
+
+        tune_baselines = {}
+        for profile in tune_profiles:
+            self.start_subtest("tune baseline EKF3 primary profile=%s" % profile)
+            ekf_run = self._navukf_single_rms_flight(
+                ahrs_type=3,
+                flight_profile=profile,
+                ukf_alpha=0.5,
+                ukf_beta=2.0,
+                ukf_kappa=0.0,
+                require_ukf_primary=False,
+            )
+            tune_baselines[profile] = ekf_run["rms"]["XKF1"]
+            self.progress(
+                "baseline %s EKF att=%.3f pos=%.3f vel=%.3f" % (
+                    profile,
+                    tune_baselines[profile]["rms_attitude_deg"],
+                    tune_baselines[profile]["rms_position_m"],
+                    tune_baselines[profile]["rms_vel_ms"]))
+
+        combo_rows = []
+        for combo in combos:
+            per_profile = []
+            ratios = []
+            failed = False
+            for profile in tune_profiles:
+                self.start_subtest(
+                    "tune UKF a=%g b=%g k=%g profile=%s" % (
+                        combo["UKF_ALPHA"], combo["UKF_BETA"], combo["UKF_KAPPA"], profile))
+                try:
+                    ukf_run = self._navukf_single_rms_flight(
+                        ahrs_type=4,
+                        flight_profile=profile,
+                        ukf_alpha=combo["UKF_ALPHA"],
+                        ukf_beta=combo["UKF_BETA"],
+                        ukf_kappa=combo["UKF_KAPPA"],
+                        require_ukf_primary=True,
+                    )
+                except Exception as ex:
+                    failed = True
+                    per_profile.append({"profile": profile, "error": str(ex)})
+                    self.progress("tune combo failed on %s: %s" % (profile, ex))
+                    try:
+                        self.disarm_vehicle(force=True)
+                    except Exception:
+                        pass
+                    continue
+                ukf = ukf_run["rms"]["UKF1"]
+                ekf = tune_baselines[profile]
+                r_att = ukf["rms_attitude_deg"] / max(ekf["rms_attitude_deg"], 1e-6)
+                r_pos = ukf["rms_position_m"] / max(ekf["rms_position_m"], 1e-6)
+                r_vel = ukf["rms_vel_ms"] / max(ekf["rms_vel_ms"], 1e-6)
+                score = (r_att + r_pos + r_vel) / 3.0
+                ratios.append(score)
+                per_profile.append({
+                    "profile": profile,
+                    "ukf": ukf,
+                    "ekf": ekf,
+                    "ratio_att": r_att,
+                    "ratio_pos": r_pos,
+                    "ratio_vel": r_vel,
+                    "score": score,
+                    "left_ukf": ukf_run.get("left_ukf", False),
+                })
+                self.progress(
+                    "tune a=%g profile=%s UKF/EKF score=%.3f (att=%.3f pos=%.3f vel=%.3f)" % (
+                        combo["UKF_ALPHA"], profile, score, r_att, r_pos, r_vel))
+            mean_score = (sum(ratios) / len(ratios)) if ratios else float("inf")
+            combo_rows.append({
+                "params": combo,
+                "failed": failed or (len(ratios) < len(tune_profiles)),
+                "mean_score": mean_score,
+                "profiles": per_profile,
+            })
+
+        viable = [r for r in combo_rows if not r["failed"]]
+        if not viable:
+            raise NotAchievedException("All UKF tune combos failed")
+        viable.sort(key=lambda r: r["mean_score"])
+        best = viable[0]
+        best_params = best["params"]
+        self.progress(
+            "Selected UKF params ALPHA=%g BETA=%g KAPPA=%g mean_score=%.4f" % (
+                best_params["UKF_ALPHA"], best_params["UKF_BETA"],
+                best_params["UKF_KAPPA"], best["mean_score"]))
+
+        validation = []
+        for profile in val_profiles:
+            self.start_subtest("validate profile=%s with tuned UKF" % profile)
+            ekf_run = self._navukf_single_rms_flight(
+                ahrs_type=3,
+                flight_profile=profile,
+                ukf_alpha=best_params["UKF_ALPHA"],
+                ukf_beta=best_params["UKF_BETA"],
+                ukf_kappa=best_params["UKF_KAPPA"],
+                require_ukf_primary=False,
+            )
+            ukf_run = self._navukf_single_rms_flight(
+                ahrs_type=4,
+                flight_profile=profile,
+                ukf_alpha=best_params["UKF_ALPHA"],
+                ukf_beta=best_params["UKF_BETA"],
+                ukf_kappa=best_params["UKF_KAPPA"],
+                require_ukf_primary=True,
+            )
+            ekf = ekf_run["rms"]["XKF1"]
+            ukf = ukf_run["rms"]["UKF1"]
+            r_att = ukf["rms_attitude_deg"] / max(ekf["rms_attitude_deg"], 1e-6)
+            r_pos = ukf["rms_position_m"] / max(ekf["rms_position_m"], 1e-6)
+            r_vel = ukf["rms_vel_ms"] / max(ekf["rms_vel_ms"], 1e-6)
+            score = (r_att + r_pos + r_vel) / 3.0
+            validation.append({
+                "profile": profile,
+                "ekf_primary": ekf,
+                "ukf_primary": ukf,
+                "ratio_att": r_att,
+                "ratio_pos": r_pos,
+                "ratio_vel": r_vel,
+                "score": score,
+                "ukf_beats_ekf": bool(score < 1.0),
+                "left_ukf": ukf_run.get("left_ukf", False),
+            })
+            self.progress(
+                "validate %s score=%.3f att_r=%.3f pos_r=%.3f vel_r=%.3f beats=%s" % (
+                    profile, score, r_att, r_pos, r_vel, score < 1.0))
+
+        val_scores = [v["score"] for v in validation]
+        val_mean = sum(val_scores) / len(val_scores)
+        payload = {
+            "generated_unix": time.time(),
+            "notes": (
+                "Tune UKF_ALPHA/BETA/KAPPA on held-in complex profiles; "
+                "score = mean(UKF_primary/EKF_primary) over att/pos/vel. "
+                "Validate on held-out profiles with winning params. "
+                "Medium GPS; UKF_USE_UT=1."
+            ),
+            "tune_profiles": tune_profiles,
+            "val_profiles": val_profiles,
+            "combos": combo_rows,
+            "best_params": best_params,
+            "best_tune_mean_score": best["mean_score"],
+            "validation": validation,
+            "validation_mean_score": val_mean,
+            "validation_ukf_beats_ekf": bool(val_mean < 1.0),
+        }
+        json_path = os.path.join(out_dir, "tune_validate.json")
+        with open(json_path, "w", encoding="utf-8") as f:
+            json.dump(payload, f, indent=2)
+            f.write("\n")
+
+        md_path = os.path.join(out_dir, "tune_validate.md")
+        with open(md_path, "w", encoding="utf-8") as f:
+            f.write("# NavUKF UT tune / validation\n\n")
+            f.write("%s\n\n" % payload["notes"])
+            f.write("## Winning params (from tune set)\n\n")
+            f.write("| Param | Value |\n|------:|------:|\n")
+            f.write("| UKF_ALPHA | %g |\n" % best_params["UKF_ALPHA"])
+            f.write("| UKF_BETA | %g |\n" % best_params["UKF_BETA"])
+            f.write("| UKF_KAPPA | %g |\n" % best_params["UKF_KAPPA"])
+            f.write("| Tune mean UKF/EKF score | %.4f |\n\n" % best["mean_score"])
+            f.write("## Tune combo ranking\n\n")
+            f.write("| ALPHA | BETA | KAPPA | mean score | failed |\n")
+            f.write("|------:|-----:|------:|-----------:|:------:|\n")
+            for r in sorted(combo_rows, key=lambda x: x["mean_score"]):
+                p = r["params"]
+                f.write("| %g | %g | %g | %.4f | %s |\n" % (
+                    p["UKF_ALPHA"], p["UKF_BETA"], p["UKF_KAPPA"],
+                    r["mean_score"] if math.isfinite(r["mean_score"]) else float("nan"),
+                    r["failed"]))
+            f.write("\n## Validation (held-out)\n\n")
+            f.write("| Profile | EKF att | UKF att | EKF pos | UKF pos | EKF vel | UKF vel | score | UKF better |\n")
+            f.write("|---------|--------:|--------:|--------:|--------:|--------:|--------:|------:|:----------:|\n")
+            for v in validation:
+                f.write("| %s | %.4f | %.4f | %.4f | %.4f | %.4f | %.4f | %.4f | %s |\n" % (
+                    v["profile"],
+                    v["ekf_primary"]["rms_attitude_deg"],
+                    v["ukf_primary"]["rms_attitude_deg"],
+                    v["ekf_primary"]["rms_position_m"],
+                    v["ukf_primary"]["rms_position_m"],
+                    v["ekf_primary"]["rms_vel_ms"],
+                    v["ukf_primary"]["rms_vel_ms"],
+                    v["score"],
+                    v["ukf_beats_ekf"]))
+            f.write("\nValidation mean UKF/EKF score: **%.4f** (UKF better overall: %s)\n" % (
+                val_mean, val_mean < 1.0))
+        self.progress("Wrote %s and %s" % (json_path, md_path))
+        if val_mean >= 1.0:
+            self.progress("WARNING: validation mean score >= 1 (UKF not better overall)")
+
+    def _navukf_medium_gps_params(self):
+        return {
+            "SIM_GPS1_FIXTYPE": 3,
+            "SIM_GPS1_ACC": 2.5,
+            "SIM_GPS1_HNSE": 2.0,
+            "SIM_GPS1_NOISE": 2.5,
+            "SIM_GPS1_NUMSATS": 8,
+            "SIM_GPS1_LAG_MS": 200,
+            "EK3_POSNE_M_NSE": 2.0,
+            "UKF_POSNE_M_NSE": 2.0,
+        }
+
+    def _navukf_single_rms_flight(self, ahrs_type, flight_profile,
+                                   ukf_alpha, ukf_beta, ukf_kappa,
+                                   require_ukf_primary=False):
+        '''One SITL flight; return RMS dict for XKF1/UKF1 vs SIM.'''
+        params = {
+            "AHRS_EKF_TYPE": ahrs_type,
+            "EK3_ENABLE": 1,
+            "EK3_IMU_MASK": 1,
+            "UKF_ENABLE": 1,
+            "UKF_IMU_MASK": 1,
+            "UKF_USE_UT": 1,
+            "UKF_ALPHA": float(ukf_alpha),
+            "UKF_BETA": float(ukf_beta),
+            "UKF_KAPPA": float(ukf_kappa),
+            "RTL_AUTOLAND": 2,
+            "LOG_DISARMED": 1,
+            "LOG_FILE_RATEMAX": 0,
+            "LOG_DARM_RATEMAX": 0,
+        }
+        params.update(self._navukf_medium_gps_params())
+        self.set_parameters(params)
+        self.context_collect("STATUSTEXT")
+        self.context_get().collections["STATUSTEXT"] = []
+        self.reboot_sitl()
+        want = "AHRS: EKF3 active" if ahrs_type == 3 else "AHRS: UKF active"
+        self.wait_statustext(want, timeout=120, check_context=True)
+        self.change_mode('MANUAL')
+        self.set_rc_default()
+        self.zero_throttle()
+        self.wait_ready_to_arm(timeout=120)
+
+        takeoff_alt = 50 if flight_profile == "circle" else 100
+        self.takeoff(alt=takeoff_alt)
+        left_ukf = False
+        if ahrs_type == 4:
+            self.context_get().collections["STATUSTEXT"] = []
+        compare_from = self._navukf_fly_profile(flight_profile)
+        if ahrs_type == 4:
+            left_ukf = (
+                self.statustext_in_collections("AHRS: EKF3 active") or
+                self.statustext_in_collections("AHRS: DCM active")
+            )
+            if require_ukf_primary and left_ukf:
+                raise NotAchievedException("AHRS left UKF during tune/validate flight")
+            self.assert_parameter_value("AHRS_EKF_TYPE", 4)
+        # Prefer a clean force-disarm over AUTO land (ACRO/far missions often
+        # hang wait_disarmed and abort the whole tune campaign).
+        try:
+            self.change_mode('FBWA')
+            self.set_rc_default()
+            self.set_rc(3, 1500)
+            self.delay_sim_time(3, reason="settle before force disarm")
+        except Exception as ex:
+            self.progress("pre-disarm settle issue: %s" % ex)
+        try:
+            self.disarm_vehicle(force=True)
+        except Exception as ex:
+            self.progress("force disarm failed (%s); trying RTL land then force" % ex)
+            try:
+                self.change_mode('RTL')
+                self.delay_sim_time(20, reason="RTL before force disarm")
+            except Exception:
+                pass
+            self.disarm_vehicle(force=True)
+        log_path = self.current_onboard_log_filepath()
+        rms = self.compute_estimator_rms_vs_sim(
+            ekf_message_types=['XKF1', 'UKF1'],
+            ignore_before_time_s=compare_from,
+            log_filepath=log_path,
+        )
+        return {
+            "AHRS_EKF_TYPE": ahrs_type,
+            "flight_profile": flight_profile,
+            "left_ukf": bool(left_ukf),
+            "compare_from_sim_s": compare_from,
+            "log": log_path,
+            "rms": rms,
+            "params": {
+                "UKF_ALPHA": float(ukf_alpha),
+                "UKF_BETA": float(ukf_beta),
+                "UKF_KAPPA": float(ukf_kappa),
+            },
+        }
+
+    def _navukf_fly_profile(self, flight_profile):
+        '''Dispatch manoeuvre sequence; return RMS compare_from sim time.'''
+        if flight_profile == "circle":
+            self.change_mode('CIRCLE')
+            compare_from = self.get_sim_time() + 15
+            self.delay_sim_time(30, reason="turning flight for estimator RMS")
+            return compare_from
+        if flight_profile == "complex":
+            return self._navukf_fly_complex_route()
+        if flight_profile == "tune_bank":
+            return self._navukf_fly_tune_bank()
+        if flight_profile == "tune_vert":
+            return self._navukf_fly_tune_vert()
+        if flight_profile == "tune_acro":
+            return self._navukf_fly_tune_acro()
+        if flight_profile == "val_mixed":
+            return self._navukf_fly_val_mixed()
+        if flight_profile == "val_endurance":
+            return self._navukf_fly_val_endurance()
+        raise ValueError("Unknown flight_profile %s" % flight_profile)
+
+    def _navukf_fly_complex_route(self):
+        '''Long multi-mode manoeuvre sequence for estimator stress testing.'''
+        # Start RMS after climb-out into first circuit
+        compare_from = self.get_sim_time() + 10
+
+        self.progress("Complex route: FBWA left circuit")
+        self.fly_left_circuit()
+
+        self.progress("Complex route: climb then descend")
+        self.change_altitude(self.home_position_as_mav_location().alt + 250,
+                             accuracy=40, relative=False)
+        self.change_altitude(self.home_position_as_mav_location().alt + 120,
+                             accuracy=40, relative=False)
+
+        self.progress("Complex route: CIRCLE 45s")
+        self.change_mode('CIRCLE')
+        self.delay_sim_time(45, reason="complex CIRCLE")
+
+        self.progress("Complex route: LOITER turns")
+        self.fly_LOITER(num_circles=3, timeout=90)
+
+        self.progress("Complex route: ACRO rolls and loops")
+        self.test_acro(count=2)
+
+        self.progress("Complex route: FBWB circuit")
+        self.test_FBWB(mode='FBWB')
+
+        self.progress("Complex route: second altitude change + left circuit")
+        self.change_altitude(self.home_position_as_mav_location().alt + 200,
+                             accuracy=40, relative=False)
+        self.fly_left_circuit()
+
+        self.progress("Complex route: CIRCLE cooldown 30s")
+        self.change_mode('CIRCLE')
+        self.delay_sim_time(30, reason="complex CIRCLE cooldown")
+
+        return compare_from
+
+    def _navukf_fly_tune_bank(self):
+        '''Tune flight: sustained banking / turning.'''
+        compare_from = self.get_sim_time() + 8
+        self.progress("tune_bank: left circuit")
+        self.fly_left_circuit()
+        self.progress("tune_bank: CIRCLE 40s")
+        self.change_mode('CIRCLE')
+        self.delay_sim_time(40, reason="tune_bank CIRCLE")
+        self.progress("tune_bank: FBWA right turns")
+        self.change_mode('FBWA')
+        self.set_rc(3, 1700)
+        for i in range(4):
+            self.set_rc(1, 1800)
+            self.wait_heading(0 + (90 * i), accuracy=20, timeout=60)
+            self.set_rc(1, 1500)
+            self.wait_distance(80, accuracy=30)
+        return compare_from
+
+    def _navukf_fly_tune_vert(self):
+        '''Tune flight: altitude changes and loiter.'''
+        compare_from = self.get_sim_time() + 8
+        home_alt = self.home_position_as_mav_location().alt
+        self.progress("tune_vert: climb/descend")
+        self.change_altitude(home_alt + 220, accuracy=40, relative=False)
+        self.change_altitude(home_alt + 100, accuracy=40, relative=False)
+        self.change_altitude(home_alt + 180, accuracy=40, relative=False)
+        self.progress("tune_vert: LOITER")
+        self.fly_LOITER(num_circles=3, timeout=90)
+        self.progress("tune_vert: CIRCLE 30s")
+        self.change_mode('CIRCLE')
+        self.delay_sim_time(30, reason="tune_vert CIRCLE")
+        return compare_from
+
+    def _navukf_fly_tune_acro(self):
+        '''Tune flight: aggressive FBWA attitude (no ACRO mode) plus circuit.'''
+        compare_from = self.get_sim_time() + 8
+        self.progress("tune_acro: aggressive FBWA rolls/pitch")
+        self.change_mode('FBWA')
+        self.set_rc(3, 2000)
+        home_alt = self.home_position_as_mav_location().alt
+        self.change_altitude(home_alt + 250, accuracy=40, relative=False)
+        for _ in range(3):
+            self.set_rc(1, 1000)
+            self.wait_roll(-45, accuracy=20, timeout=30)
+            self.set_rc(1, 2000)
+            self.wait_roll(45, accuracy=20, timeout=30)
+            self.set_rc(1, 1500)
+            self.wait_level_flight(accuracy=15, timeout=30)
+        self.set_rc(2, 1200)
+        self.wait_pitch(15, accuracy=10, timeout=30)
+        self.set_rc(2, 1800)
+        self.wait_pitch(-10, accuracy=10, timeout=30)
+        self.set_rc(2, 1500)
+        self.wait_level_flight(accuracy=15, timeout=30)
+        self.progress("tune_acro: left circuit")
+        self.fly_left_circuit()
+        self.progress("tune_acro: CIRCLE 25s")
+        self.change_mode('CIRCLE')
+        self.delay_sim_time(25, reason="tune_acro CIRCLE")
+        return compare_from
+
+    def _navukf_fly_val_mixed(self):
+        '''Validation flight: held-out manoeuvre order (not used in tune).'''
+        compare_from = self.get_sim_time() + 8
+        home_alt = self.home_position_as_mav_location().alt
+        self.progress("val_mixed: CIRCLE first")
+        self.change_mode('CIRCLE')
+        self.delay_sim_time(35, reason="val_mixed CIRCLE")
+        self.progress("val_mixed: aggressive FBWA")
+        self.change_mode('FBWA')
+        self.set_rc(3, 1900)
+        self.set_rc(1, 1000)
+        self.wait_heading(270, accuracy=20, timeout=60)
+        self.set_rc(1, 2000)
+        self.wait_heading(90, accuracy=20, timeout=60)
+        self.set_rc(1, 1500)
+        self.progress("val_mixed: climb")
+        self.change_altitude(home_alt + 200, accuracy=40, relative=False)
+        self.progress("val_mixed: bank pattern")
+        self.set_rc(1, 1800)
+        self.wait_heading(180, accuracy=20, timeout=60)
+        self.set_rc(1, 1500)
+        self.wait_distance(80, accuracy=30)
+        self.set_rc(1, 1200)
+        self.wait_heading(0, accuracy=20, timeout=60)
+        self.set_rc(1, 1500)
+        self.progress("val_mixed: left circuit")
+        self.fly_left_circuit()
+        return compare_from
+
+    def _navukf_fly_val_endurance(self):
+        '''Validation flight: longer turning endurance without ACRO.'''
+        compare_from = self.get_sim_time() + 8
+        home_alt = self.home_position_as_mav_location().alt
+        self.progress("val_endurance: circuit 1")
+        self.fly_left_circuit()
+        self.progress("val_endurance: LOITER")
+        self.fly_LOITER(num_circles=4, timeout=90)
+        self.progress("val_endurance: altitude")
+        self.change_altitude(home_alt + 240, accuracy=40, relative=False)
+        self.change_altitude(home_alt + 130, accuracy=40, relative=False)
+        self.progress("val_endurance: circuit 2")
+        self.fly_left_circuit()
+        self.progress("val_endurance: CIRCLE 40s")
+        self.change_mode('CIRCLE')
+        self.delay_sim_time(40, reason="val_endurance CIRCLE")
+        return compare_from
+
+    def NavUKFSigmaSweep(self):
+        '''UKF-primary CIRCLE RMS vs SIM for several UKF_ALPHA/BETA/KAPPA sets.
+        Writes docs/navukf_sigma_sweep/sweep.json for tuning UT sigma params.
+        '''
+        import json
+        import os
+        import time
+
+        out_dir = os.path.join(self.rootdir(), "docs", "navukf_sigma_sweep")
+        os.makedirs(out_dir, exist_ok=True)
+
+        # Focus around alpha=0.5 (legacy 0.001 and coarse grid already screened).
+        combos = [
+            (0.3, 2.0, 0.0),
+            (0.4, 2.0, 0.0),
+            (0.5, 2.0, 0.0),
+            (0.6, 2.0, 0.0),
+            (0.7, 2.0, 0.0),
+            (0.5, 2.0, 3.0),
+            (0.5, 0.0, 0.0),
+        ]
+        medium_gps_params = {
+            "SIM_GPS1_FIXTYPE": 3,
+            "SIM_GPS1_ACC": 2.5,
+            "SIM_GPS1_HNSE": 2.0,
+            "SIM_GPS1_NOISE": 2.5,
+            "SIM_GPS1_NUMSATS": 8,
+            "SIM_GPS1_LAG_MS": 200,
+            "EK3_POSNE_M_NSE": 2.0,
+            "UKF_POSNE_M_NSE": 2.0,
+        }
+        results = []
+        for alpha, beta, kappa in combos:
+            self.start_subtest("sigma sweep alpha=%g beta=%g kappa=%g" % (alpha, beta, kappa))
+            row = {
+                "UKF_ALPHA": alpha,
+                "UKF_BETA": beta,
+                "UKF_KAPPA": kappa,
+                "left_ukf": None,
+                "ukf_att_deg": None,
+                "ukf_pos_m": None,
+                "ukf_vel_ms": None,
+                "xkf_att_deg": None,
+                "xkf_pos_m": None,
+                "xkf_vel_ms": None,
+                "error": None,
+            }
+            try:
+                params = {
+                    "AHRS_EKF_TYPE": 4,
+                    "EK3_ENABLE": 1,
+                    "EK3_IMU_MASK": 1,
+                    "UKF_ENABLE": 1,
+                    "UKF_IMU_MASK": 1,
+                    "UKF_USE_UT": 1,
+                    "UKF_ALPHA": float(alpha),
+                    "UKF_BETA": float(beta),
+                    "UKF_KAPPA": float(kappa),
+                    "RTL_AUTOLAND": 2,
+                    "LOG_DISARMED": 1,
+                    "LOG_FILE_RATEMAX": 0,
+                    "LOG_DARM_RATEMAX": 0,
+                }
+                params.update(medium_gps_params)
+                self.set_parameters(params)
+                self.context_collect("STATUSTEXT")
+                self.context_get().collections["STATUSTEXT"] = []
+                self.reboot_sitl()
+                self.wait_statustext("AHRS: UKF active", timeout=120, check_context=True)
+                self.change_mode('MANUAL')
+                self.set_rc_default()
+                self.zero_throttle()
+                self.wait_ready_to_arm(timeout=120)
+                self.takeoff(alt=50)
+                self.context_get().collections["STATUSTEXT"] = []
+                self.change_mode('CIRCLE')
+                compare_from = self.get_sim_time() + 15
+                self.delay_sim_time(30, reason="sigma sweep CIRCLE")
+                left_ukf = (
+                    self.statustext_in_collections("AHRS: EKF3 active") or
+                    self.statustext_in_collections("AHRS: DCM active")
+                )
+                self.fly_home_land_and_disarm()
+                log_path = self.current_onboard_log_filepath()
+                rms = self.compute_estimator_rms_vs_sim(
+                    ekf_message_types=['XKF1', 'UKF1'],
+                    ignore_before_time_s=compare_from,
+                    log_filepath=log_path,
+                )
+                ukf = rms.get("UKF1", {})
+                xkf = rms.get("XKF1", {})
+                row.update({
+                    "left_ukf": bool(left_ukf),
+                    "ukf_att_deg": ukf.get("rms_attitude_deg"),
+                    "ukf_pos_m": ukf.get("rms_position_m"),
+                    "ukf_vel_ms": ukf.get("rms_vel_ms"),
+                    "xkf_att_deg": xkf.get("rms_attitude_deg"),
+                    "xkf_pos_m": xkf.get("rms_position_m"),
+                    "xkf_vel_ms": xkf.get("rms_vel_ms"),
+                })
+                self.progress(
+                    "sweep alpha=%g kappa=%g UKF att=%.4f pos=%.4f vel=%.4f left=%s" % (
+                        alpha, kappa,
+                        row["ukf_att_deg"] or -1,
+                        row["ukf_pos_m"] or -1,
+                        row["ukf_vel_ms"] or -1,
+                        left_ukf))
+            except Exception as ex:
+                row["error"] = str(ex)
+                self.progress("sweep alpha=%g kappa=%g FAILED: %s" % (alpha, kappa, ex))
+                try:
+                    self.disarm_vehicle(force=True)
+                except Exception:
+                    pass
+            results.append(row)
+
+        payload = {
+            "generated_unix": time.time(),
+            "notes": "UKF primary, USE_UT=1, medium GPS CIRCLE window; tune ALPHA/BETA/KAPPA",
+            "results": results,
+        }
+        out_path = os.path.join(out_dir, "sweep.json")
+        with open(out_path, "w", encoding="utf-8") as f:
+            json.dump(payload, f, indent=2)
+            f.write("\n")
+        md_path = os.path.join(out_dir, "sweep.md")
+        with open(md_path, "w", encoding="utf-8") as f:
+            f.write("# NavUKF sigma-parameter sweep (UKF primary)\n\n")
+            f.write("| ALPHA | BETA | KAPPA | left UKF | UKF att deg | UKF pos m | UKF vel | XKF att deg |\n")
+            f.write("|------:|-----:|------:|:--------:|-----------:|----------:|--------:|------------:|\n")
+            for r in results:
+                f.write("| %g | %g | %g | %s | %.4f | %.4f | %.4f | %.4f |\n" % (
+                    r["UKF_ALPHA"], r["UKF_BETA"], r["UKF_KAPPA"],
+                    r["left_ukf"],
+                    r["ukf_att_deg"] or float("nan"),
+                    r["ukf_pos_m"] or float("nan"),
+                    r["ukf_vel_ms"] or float("nan"),
+                    r["xkf_att_deg"] or float("nan")))
+        self.progress("Wrote %s and %s" % (out_path, md_path))
+
+    def _navukf_ekf3_rms_flights(self, out_subdir, use_ut, medium_gps, title,
+                                  ukf_alpha=None, ukf_beta=None, ukf_kappa=None,
+                                  flight_profile="circle"):
+        '''Shared dual-estimator RMS campaign used by NavUKFEKF3RMS variants.'''
+        import json
+        import os
+        import shutil
+        import time
+
+        if ukf_alpha is None:
+            ukf_alpha = 0.35
+        if ukf_beta is None:
+            ukf_beta = 2.0
+        if ukf_kappa is None:
+            ukf_kappa = 0.0
+
+        out_dir = os.path.join(self.rootdir(), "docs", out_subdir)
+        os.makedirs(out_dir, exist_ok=True)
+
+        # Medium-quality single-constellation consumer GNSS (not RTK):
+        # 3D fix, ~2.5 m reported accuracy, horizontal wander + vertical noise,
+        # 8 sats, 200 ms lag. Defaults are near-ideal (RTK Fixed, ACC=0.3, no noise).
+        medium_gps_params = {
+            "SIM_GPS1_FIXTYPE": 3,   # 3D Fix
+            "SIM_GPS1_ACC": 2.5,     # reported accuracy (m)
+            "SIM_GPS1_HNSE": 2.0,    # horizontal wander radius (m)
+            "SIM_GPS1_NOISE": 2.5,   # vertical noise amplitude (m)
+            "SIM_GPS1_NUMSATS": 8,
+            "SIM_GPS1_LAG_MS": 200,
+            # Align filter GPS position noise with medium-quality measurements
+            "EK3_POSNE_M_NSE": 2.0,
+            "UKF_POSNE_M_NSE": 2.0,
+        }
+
+        runs = []
+        for primary_name, ahrs_type in (("EKF3", 3), ("UKF", 4)):
+            self.start_subtest("RMS flight AHRS primary=%s use_ut=%u medium_gps=%u profile=%s" % (
+                primary_name, int(use_ut), int(medium_gps), flight_profile))
+            params = {
+                "AHRS_EKF_TYPE": ahrs_type,
+                "EK3_ENABLE": 1,
+                "EK3_IMU_MASK": 1,
+                "UKF_ENABLE": 1,
+                "UKF_IMU_MASK": 1,
+                "UKF_USE_UT": int(use_ut),
+                "UKF_ALPHA": float(ukf_alpha),
+                "UKF_BETA": float(ukf_beta),
+                "UKF_KAPPA": float(ukf_kappa),
+                "RTL_AUTOLAND": 2,  # default mission includes DO_LAND_START
+                "LOG_DISARMED": 1,
+                "LOG_FILE_RATEMAX": 0,
+                "LOG_DARM_RATEMAX": 0,
+            }
+            if medium_gps:
+                params.update(medium_gps_params)
+            self.set_parameters(params)
+            self.context_collect("STATUSTEXT")
+            self.context_get().collections["STATUSTEXT"] = []
+            self.reboot_sitl()
+            want = "AHRS: EKF3 active" if ahrs_type == 3 else "AHRS: UKF active"
+            self.wait_statustext(want, timeout=120, check_context=True)
+            self.change_mode('MANUAL')
+            self.set_rc_default()
+            self.zero_throttle()
+            self.wait_ready_to_arm(timeout=120)
+
+            takeoff_alt = 50 if flight_profile == "circle" else 100
+            self.takeoff(alt=takeoff_alt)
+            if ahrs_type == 4:
+                # UT UKF must remain the active AHRS throughout the manoeuvre
+                self.context_get().collections["STATUSTEXT"] = []
+            compare_from = self._navukf_fly_profile(flight_profile)
+            if ahrs_type == 4:
+                # Fail if AHRS fell back away from UKF during the flight
+                if self.statustext_in_collections("AHRS: EKF3 active") or \
+                   self.statustext_in_collections("AHRS: DCM active"):
+                    raise NotAchievedException("AHRS left UKF during UT primary flight")
+                # Confirm still configured/active as UKF
+                self.assert_parameter_value("AHRS_EKF_TYPE", 4)
+            self.fly_home_land_and_disarm()
+
+            log_path = self.current_onboard_log_filepath()
+            rms = self.compute_estimator_rms_vs_sim(
+                ekf_message_types=['XKF1', 'UKF1'],
+                ignore_before_time_s=compare_from,
+                log_filepath=log_path,
+            )
+            dest_log = os.path.join(out_dir, "run_%s_primary.bin" % primary_name.lower())
+            shutil.copy2(log_path, dest_log)
+            runs.append({
+                "primary": primary_name,
+                "AHRS_EKF_TYPE": ahrs_type,
+                "UKF_USE_UT": int(use_ut),
+                "medium_gps": bool(medium_gps),
+                "flight_profile": flight_profile,
+                "status": "ok",
+                "compare_from_sim_s": compare_from,
+                "log": dest_log,
+                "rms": rms,
+            })
+
+        notes = (
+            "Both EK3 and UKF enabled with IMU_MASK=1 (single core each on IMU0). "
+            "RMS vs SIM attitude and SIM2 position/velocity; EKF/UKF position "
+            "origin offset removed using first 10 armed samples in window. "
+            "Flight profile=%s. "
+            "UKF_USE_UT=%u UKF_ALPHA=%g UKF_BETA=%g UKF_KAPPA=%g." % (
+                flight_profile,
+                int(use_ut), float(ukf_alpha), float(ukf_beta), float(ukf_kappa))
+        )
+        if flight_profile == "complex":
+            notes += (
+                " Complex route: FBWA left circuit, climb/descend, CIRCLE, LOITER, "
+                "ACRO rolls/loops, FBWB circuit, second circuit, CIRCLE; then RTL."
+            )
+        elif flight_profile == "circle":
+            notes += " Window starts 15s after CIRCLE entry (post climb-out)."
+        if medium_gps:
+            notes += (
+                " Medium GPS: SIM_GPS1_FIXTYPE=3, ACC=2.5m, HNSE=2.0m, NOISE=2.5m, "
+                "NUMSATS=8, LAG_MS=200; EK3/UKF POSNE_M_NSE=2.0."
+            )
+
+        payload = {
+            "vehicle": "ArduPlane",
+            "frame": "plane",
+            "UKF_USE_UT": int(use_ut),
+            "UKF_ALPHA": float(ukf_alpha),
+            "UKF_BETA": float(ukf_beta),
+            "UKF_KAPPA": float(ukf_kappa),
+            "medium_gps": bool(medium_gps),
+            "flight_profile": flight_profile,
+            "notes": notes,
+            "generated_unix": time.time(),
+            "runs": runs,
+        }
+        json_path = os.path.join(out_dir, "rms_results.json")
+        with open(json_path, "w", encoding="utf-8") as f:
+            json.dump(payload, f, indent=2)
+            f.write("\n")
+
+        md_path = os.path.join(out_dir, "rms_results.md")
+        with open(md_path, "w", encoding="utf-8") as f:
+            f.write("# %s\n\n" % title)
+            f.write("%s\n\n" % payload["notes"])
+            for run in runs:
+                f.write("## Primary: %s (`AHRS_EKF_TYPE=%u`)\n\n" % (
+                    run["primary"], run["AHRS_EKF_TYPE"]))
+                if run.get("status") == "skipped" or run.get("rms") is None:
+                    f.write("**Skipped** — %s\n\n" % run.get("reason", "unavailable"))
+                    continue
+                f.write("| Estimator | Samples | RMS attitude (deg) | RMS roll | RMS pitch | RMS yaw | RMS position (m) | RMS PN | RMS PE | RMS PD | RMS vel (m/s) |\n")
+                f.write("|-----------|---------|-------------------:|---------:|----------:|--------:|-----------------:|-------:|-------:|-------:|--------------:|\n")
+                for key, r in run["rms"].items():
+                    f.write(
+                        "| %s | %u | %.4f | %.4f | %.4f | %.4f | %.4f | %.4f | %.4f | %.4f | %.4f |\n" % (
+                            key, r["samples"], r["rms_attitude_deg"],
+                            r["rms_roll_deg"], r["rms_pitch_deg"], r["rms_yaw_deg"],
+                            r["rms_position_m"], r["rms_pos_n_m"], r["rms_pos_e_m"],
+                            r["rms_pos_d_m"], r["rms_vel_ms"]))
+                f.write("\nLog: `%s`\n\n" % run["log"])
+        self.progress("Wrote RMS results to %s and %s" % (json_path, md_path))
+
     def fly_LOITER(self, num_circles=4, timeout=60):
         """Loiter where we are."""
         self.progress("Testing LOITER for %u turns" % num_circles)
@@ -8704,6 +9547,11 @@ class AutoTestPlane(vehicle_test_suite.TestSuite):
             self.TestRCRelay,
             self.ThrottleFailsafe,
             self.NeedEKFToArm,
+            self.NavUKFSmoke,
+            self.NavUKFEKF3RMS,
+            self.NavUKFEKF3RMS_UT,
+            self.NavUKFEKF3RMS_UT_Complex,
+            self.NavUKFTuneValidate,
             self.ThrottleFailsafeFence,
             self.NoShortFailsafe,
             self.SoaringClimbRate,

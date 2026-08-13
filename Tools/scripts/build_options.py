@@ -42,6 +42,7 @@ class Feature:
 #                 (a single string with commas and no spaces). e.g., 'dependency1,dependency2'.
 BUILD_OPTIONS = [
     Feature('AHRS', 'EKF3', 'HAL_NAVEKF3_AVAILABLE', 'Enable EKF3', 1, None),
+    Feature('AHRS', 'UKF', 'HAL_NAVUKF_AVAILABLE', 'Enable NavUKF (SITL)', 0, None),
     Feature('AHRS', 'EKF2', 'HAL_NAVEKF2_AVAILABLE', 'Enable EKF2', 0, None),
     Feature('AHRS', 'AHRS_EXT', 'AP_EXTERNAL_AHRS_ENABLED', 'Enable External AHRS', 0, None),
     Feature('AHRS', 'MicroStrain5', 'AP_EXTERNAL_AHRS_MICROSTRAIN5_ENABLED', 'Enable MICROSTRAIN 5-series external AHRS', 0, "AHRS_EXT"),  # noqa: E501
