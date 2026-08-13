@@ -1,0 +1,194 @@
+{
+  "generated_unix": 1786640557.447977,
+  "notes": "Restored Euclidean UT mean and additive IMU Q after tangent-mean and cubature failed on the test set (cubature tune_bank att ratio ~16). Scaled UT ALPHA=0.35 BETA=2 KAPPA=0 SIGMA=0. Medium GPS. Score = mean(UKF_primary/EKF_primary) over att/pos/vel.",
+  "UKF_ALPHA": 0.35,
+  "UKF_BETA": 2.0,
+  "UKF_KAPPA": 0.0,
+  "UKF_SIGMA": 0,
+  "test_profiles": [
+    "tune_bank",
+    "tune_vert",
+    "tune_acro"
+  ],
+  "test_results": [
+    {
+      "profile": "tune_bank",
+      "ekf": {
+        "samples": 2518,
+        "rms_roll_deg": 0.2895103505058838,
+        "rms_pitch_deg": 0.2666254270468126,
+        "rms_yaw_deg": 1.082281296065189,
+        "rms_attitude_deg": 1.1516241423357192,
+        "rms_pos_n_m": 1.543335989313301,
+        "rms_pos_e_m": 3.5401164957852878,
+        "rms_pos_d_m": 0.3444759372913212,
+        "rms_position_m": 3.8772379925680998,
+        "rms_vel_ms": 0.39092332300452526
+      },
+      "ukf": {
+        "samples": 2511,
+        "rms_roll_deg": 0.35044956051385895,
+        "rms_pitch_deg": 0.4675750248069052,
+        "rms_yaw_deg": 0.9582575576503977,
+        "rms_attitude_deg": 1.1223630629531782,
+        "rms_pos_n_m": 1.5741173560983808,
+        "rms_pos_e_m": 3.230561109397915,
+        "rms_pos_d_m": 0.11871882709467318,
+        "rms_position_m": 3.595617428513659,
+        "rms_vel_ms": 0.4255244874126509
+      },
+      "UKF_SIGMA": 0,
+      "score": 0.9968228422636897,
+      "ratio_att": 0.97459146755712,
+      "ratio_pos": 0.9273656751031916,
+      "ratio_vel": 1.0885113841307574,
+      "ukf_beats_ekf": true,
+      "left_ukf": false
+    },
+    {
+      "profile": "tune_vert",
+      "ekf": {
+        "samples": 2633,
+        "rms_roll_deg": 0.24016958181431813,
+        "rms_pitch_deg": 0.22432961276080524,
+        "rms_yaw_deg": 1.1081978129864454,
+        "rms_attitude_deg": 1.155901205076895,
+        "rms_pos_n_m": 2.2777702859659423,
+        "rms_pos_e_m": 1.5062702558438268,
+        "rms_pos_d_m": 0.7220154200230514,
+        "rms_position_m": 2.824605074345839,
+        "rms_vel_ms": 0.4923036149184736
+      },
+      "ukf": {
+        "samples": 2641,
+        "rms_roll_deg": 0.2427516435979767,
+        "rms_pitch_deg": 0.3156616174338259,
+        "rms_yaw_deg": 1.0403480761993311,
+        "rms_attitude_deg": 1.1139545488223956,
+        "rms_pos_n_m": 2.30888439065702,
+        "rms_pos_e_m": 1.5082837063648886,
+        "rms_pos_d_m": 0.7703984003895954,
+        "rms_position_m": 2.863456052330521,
+        "rms_vel_ms": 0.5073239603879955
+      },
+      "UKF_SIGMA": 0,
+      "score": 1.0026585582153535,
+      "ratio_att": 0.9637108638088936,
+      "ratio_pos": 1.0137544814096462,
+      "ratio_vel": 1.0305103294275209,
+      "ukf_beats_ekf": false,
+      "left_ukf": false
+    },
+    {
+      "profile": "tune_acro",
+      "ekf": {
+        "samples": 1796,
+        "rms_roll_deg": 0.484498799647314,
+        "rms_pitch_deg": 0.3211508398173162,
+        "rms_yaw_deg": 1.1968282135829875,
+        "rms_attitude_deg": 1.330516712260053,
+        "rms_pos_n_m": 1.9308102176101933,
+        "rms_pos_e_m": 1.832514030205673,
+        "rms_pos_d_m": 0.6152557900375043,
+        "rms_position_m": 2.732155825443204,
+        "rms_vel_ms": 0.4894874453892612
+      },
+      "ukf": {
+        "samples": 1764,
+        "rms_roll_deg": 0.5545842756703995,
+        "rms_pitch_deg": 0.6139460116455024,
+        "rms_yaw_deg": 1.1925996062642614,
+        "rms_attitude_deg": 1.4514776074393818,
+        "rms_pos_n_m": 2.2495051941333344,
+        "rms_pos_e_m": 1.8280229089897826,
+        "rms_pos_d_m": 0.6983725254936132,
+        "rms_position_m": 2.981554218623006,
+        "rms_vel_ms": 0.5168861341330305
+      },
+      "UKF_SIGMA": 0,
+      "score": 1.0793898673913431,
+      "ratio_att": 1.0909127213996894,
+      "ratio_pos": 1.0912826387343206,
+      "ratio_vel": 1.0559742420400196,
+      "ukf_beats_ekf": false,
+      "left_ukf": false
+    }
+  ],
+  "test_mean_score": 1.0262904226234622,
+  "val_profiles": [
+    "val_mixed",
+    "val_endurance"
+  ],
+  "validation": [
+    {
+      "profile": "val_mixed",
+      "ekf": {
+        "samples": 2691,
+        "rms_roll_deg": 0.4528861572440283,
+        "rms_pitch_deg": 0.5978159804557706,
+        "rms_yaw_deg": 0.9583542773146412,
+        "rms_attitude_deg": 1.2169357989470213,
+        "rms_pos_n_m": 1.9545199485625766,
+        "rms_pos_e_m": 1.539192857023507,
+        "rms_pos_d_m": 0.1883778721225686,
+        "rms_position_m": 2.4949447094367985,
+        "rms_vel_ms": 0.5695582971895937
+      },
+      "ukf": {
+        "samples": 2671,
+        "rms_roll_deg": 0.5691804126934928,
+        "rms_pitch_deg": 0.6802655184482503,
+        "rms_yaw_deg": 1.1415558327152646,
+        "rms_attitude_deg": 1.4456407703817165,
+        "rms_pos_n_m": 2.3130737990702115,
+        "rms_pos_e_m": 1.5887210676493078,
+        "rms_pos_d_m": 0.24339775083391726,
+        "rms_position_m": 2.8166624746051605,
+        "rms_vel_ms": 0.6002890767708645
+      },
+      "UKF_SIGMA": 0,
+      "score": 1.123612809917387,
+      "ratio_att": 1.1879351167354817,
+      "ratio_pos": 1.1289478536143536,
+      "ratio_vel": 1.0539554594023255,
+      "ukf_beats_ekf": false,
+      "left_ukf": false
+    },
+    {
+      "profile": "val_endurance",
+      "ekf": {
+        "samples": 4691,
+        "rms_roll_deg": 0.3721589171928182,
+        "rms_pitch_deg": 0.39530537537404714,
+        "rms_yaw_deg": 1.0866861573238573,
+        "rms_attitude_deg": 1.214765575724402,
+        "rms_pos_n_m": 1.8654799019829953,
+        "rms_pos_e_m": 3.554746557959911,
+        "rms_pos_d_m": 0.34147289015353083,
+        "rms_position_m": 4.029000135361145,
+        "rms_vel_ms": 0.5872211751746098
+      },
+      "ukf": {
+        "samples": 4691,
+        "rms_roll_deg": 0.44602369324873914,
+        "rms_pitch_deg": 0.520980967209374,
+        "rms_yaw_deg": 0.9922471369215724,
+        "rms_attitude_deg": 1.2061976139350956,
+        "rms_pos_n_m": 1.7411500951763583,
+        "rms_pos_e_m": 3.587337674178995,
+        "rms_pos_d_m": 0.2161544766672565,
+        "rms_position_m": 3.9934093204052976,
+        "rms_vel_ms": 0.5981473783599017
+      },
+      "UKF_SIGMA": 0,
+      "score": 1.0009065942030206,
+      "ratio_att": 0.9929468187438576,
+      "ratio_pos": 0.9911663405906891,
+      "ratio_vel": 1.018606623274515,
+      "ukf_beats_ekf": false,
+      "left_ukf": false
+    }
+  ],
+  "validation_mean_score": 1.0622597020602038,
+  "validation_ukf_beats_ekf": false
+}
