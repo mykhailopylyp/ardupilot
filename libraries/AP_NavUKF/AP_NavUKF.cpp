@@ -794,6 +794,13 @@ const AP_Param::GroupInfo NavUKF::var_info2[] = {
     // @User: Advanced
     AP_GROUPINFO("KAPPA", 14, NavUKF, _ukf_kappa, 0.0f),
 
+    // @Param: SIGMA
+    // @DisplayName: UKF sigma-point method
+    // @Description: Algorithm used to place unscented-transform sigma points. 0 uses van der Merwe scaled UT with ALPHA/BETA/KAPPA. 1 uses spherical cubature (gamma=sqrt(n), zero central weight).
+    // @Values: 0:ScaledUT,1:Cubature
+    // @User: Advanced
+    AP_GROUPINFO("SIGMA", 15, NavUKF, _ukf_sigma, 0),
+
     AP_GROUPEND
 };
 

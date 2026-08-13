@@ -16,19 +16,29 @@
 bool NavUKF_core::drawSigmaPoints(const ftype *mean)
 {
     ukf_n = uint8_t(stateIndexLim + 1);
-    const ftype ukf_alpha = constrain_ftype(frontend->_ukf_alpha, 1.0e-3f, 1.0f);
-    const ftype ukf_beta  = constrain_ftype(frontend->_ukf_beta, 0.0f, 10.0f);
-    const ftype ukf_kappa = constrain_ftype(frontend->_ukf_kappa, -24.0f, 24.0f);
     const ftype n_f = (ftype)ukf_n;
-    const ftype lambda = ukf_alpha * ukf_alpha * (n_f + ukf_kappa) - n_f;
-    const ftype n_lambda = n_f + lambda;
-    if (n_lambda <= 0.0f) {
-        return false;
+    ftype gamma;
+    const uint8_t sigma_method = (uint8_t)constrain_int16(frontend->_ukf_sigma, 0, 1);
+    if (sigma_method == 1) {
+        // Spherical cubature: 2n points at ±sqrt(n) Cholesky columns (zero central weight).
+        gamma = sqrtF(n_f);
+        ukf_Wm0 = 0.0f;
+        ukf_Wc0 = 0.0f;
+        ukf_Wi  = 0.5f / n_f;
+    } else {
+        const ftype ukf_alpha = constrain_ftype(frontend->_ukf_alpha, 1.0e-3f, 1.0f);
+        const ftype ukf_beta  = constrain_ftype(frontend->_ukf_beta, 0.0f, 10.0f);
+        const ftype ukf_kappa = constrain_ftype(frontend->_ukf_kappa, -24.0f, 24.0f);
+        const ftype lambda = ukf_alpha * ukf_alpha * (n_f + ukf_kappa) - n_f;
+        const ftype n_lambda = n_f + lambda;
+        if (n_lambda <= 0.0f) {
+            return false;
+        }
+        gamma = sqrtF(n_lambda);
+        ukf_Wm0 = lambda / n_lambda;
+        ukf_Wc0 = ukf_Wm0 + (1.0f - ukf_alpha * ukf_alpha + ukf_beta);
+        ukf_Wi  = 0.5f / n_lambda;
     }
-    const ftype gamma = sqrtF(n_lambda);
-    ukf_Wm0 = lambda / n_lambda;
-    ukf_Wc0 = ukf_Wm0 + (1.0f - ukf_alpha * ukf_alpha + ukf_beta);
-    ukf_Wi  = 0.5f / n_lambda;
     ukf_n_sigma = uint8_t(2 * ukf_n + 1);
 
     auto &L = KHP;

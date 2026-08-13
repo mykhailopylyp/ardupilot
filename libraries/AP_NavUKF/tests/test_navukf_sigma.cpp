@@ -114,6 +114,40 @@ TEST(NavUKFSigma, QuaternionSignAlign)
     EXPECT_NEAR(q1[0], q2[0], 1.0e-6f);
 }
 
+TEST(NavUKFSigma, CubatureWeightsSumToOne)
+{
+    const uint8_t n = 24;
+    const float Wi = 0.5f / (float)n;
+    const float Wm0 = 0.0f;
+    const float sum_m = Wm0 + 2.0f * n * Wi;
+    EXPECT_NEAR(sum_m, 1.0f, 1.0e-6f);
+    EXPECT_NEAR(sqrtf((float)n), 4.898979f, 1.0e-5f);
+}
+
+TEST(NavUKFSigma, GyroNoiseMapsToQuatTangent)
+{
+    // Identity quat: gyro-x noise var G should appear as (G/4) on q1 only.
+    const float q[4] = {1.0f, 0.0f, 0.0f, 0.0f};
+    const float J[4][3] = {
+        { -0.5f * q[1], -0.5f * q[2], -0.5f * q[3] },
+        {  0.5f * q[0], -0.5f * q[3],  0.5f * q[2] },
+        {  0.5f * q[3],  0.5f * q[0], -0.5f * q[1] },
+        { -0.5f * q[2],  0.5f * q[1],  0.5f * q[0] },
+    };
+    const float daxVar = 0.04f;
+    float P[4][4] = {};
+    for (uint8_t i = 0; i < 4; i++) {
+        for (uint8_t j = i; j < 4; j++) {
+            P[i][j] += J[i][0] * daxVar * J[j][0];
+            P[j][i] = P[i][j];
+        }
+    }
+    EXPECT_NEAR(P[0][0], 0.0f, 1.0e-6f);
+    EXPECT_NEAR(P[1][1], 0.01f, 1.0e-6f);
+    EXPECT_NEAR(P[2][2], 0.0f, 1.0e-6f);
+    EXPECT_NEAR(P[3][3], 0.0f, 1.0e-6f);
+}
+
 #endif
 
 AP_GTEST_MAIN()
