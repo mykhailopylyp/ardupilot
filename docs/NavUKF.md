@@ -7,8 +7,7 @@ Unscented Kalman Filter navigation backend for ArduPilot (`libraries/AP_NavUKF`)
 ## What it is
 
 - Same 24-state INS model and delayed-horizon fusion layout as EKF3.
-- **Covariance prediction** defaults to the EKF3-equivalent Jacobian algebra (`UKF_USE_UT=0`) for numerical stability.
-- Optional **covariance-only unscented transform** when `UKF_USE_UT=1` (sigma points via `UKF_ALPHA` / `UKF_BETA` / `UKF_KAPPA`). Measurement fusion remains EKF-style sequential update (`FinishFusion`) in both modes.
+- **Covariance prediction** and **all measurement updates** use the unscented transform (sigma points via `UKF_ALPHA` / `UKF_BETA` / `UKF_KAPPA`). There is no Jacobian measurement or predict path.
 - Selected with `AHRS_EKF_TYPE=4`.
 
 ## Parameters
@@ -20,8 +19,7 @@ Prefix: `UKF_`
 | `UKF_ENABLE` | Run UKF maths (1=on). Still need `AHRS_EKF_TYPE=4` to fly on UKF. |
 | `UKF_IMU_MASK` | Bitmask of IMUs → UKF cores (use `1` for a single core on IMU0). |
 | `UKF_PRIMARY` | Preferred core index while disarmed. |
-| `UKF_USE_UT` | `0` (default): Jacobian covariance prediction. `1`: unscented transform covariance prediction (experimental). |
-| `UKF_ALPHA` | Unscented transform α (default `0.35`; used when `UKF_USE_UT=1`). |
+| `UKF_ALPHA` | Unscented transform α (default `0.35`). |
 | `UKF_BETA` | Unscented transform β (default `2`). |
 | `UKF_KAPPA` | Unscented transform κ (default `0`). |
 | Other `UKF_*` | Ported from EKF3 noise/gate/source parameters (`GYRO_P_NSE`, `ACC_P_NSE`, GPS/baro/mag gates, `SRC*`, …). |
@@ -50,12 +48,6 @@ Or after boot (then reboot SITL / soft reboot):
 AHRS_EKF_TYPE 4
 UKF_ENABLE 1
 UKF_IMU_MASK 1
-```
-
-Optional experimental UT predict:
-
-```text
-UKF_USE_UT 1
 UKF_ALPHA 0.35
 UKF_BETA 2
 UKF_KAPPA 0
@@ -102,11 +94,11 @@ Tools/autotest/autotest.py build.Plane test.Plane.NavUKFSmoke --force-ahrs-type=
 ## Notes / limits
 
 - Default **off** on non-SITL boards (flash/CPU).
-- Default covariance prediction matches EKF3 (Jacobian). Set `UKF_USE_UT=1` for the sigma-point covariance path (no Jacobian fallback).
+- Covariance prediction and measurement fusion both use the unscented transform (no Jacobian algebra).
 - UT sigma points use each point’s own start-of-step attitude and raw IMU deltas with bias scaled by `del*DT/dtEkfAvg` (matching strapdown).
 - Prefer `UKF_ALPHA` around `0.35` (tuned vs EKF3 on complex SITL flights; not `0.001`): tiny alpha makes central UT weights ~`-1/α²` and ill-conditioned `P`. Attitude sigma points are multiplicative (rotation-vector on the quaternion manifold).
-- Scaled UT can leave `P` briefly ill-conditioned for mag Jacobians (`HPH'+R < R` or `FinishFusion` refusing an update). NavUKF repairs `P` and skips that mag sample instead of `BAD_*MAG` / `CovarianceInit`, so AHRS can keep UKF primary (no DCM flicker).
-- Dual-estimator RMS (medium GPS, `UKF_USE_UT=1`): `test.Plane.NavUKFEKF3RMS_UT` → `docs/navukf_rms_results_ut_medium_gps/`.
+- Scaled UT can leave `P` briefly ill-conditioned (`Pzz < R` or `FinishFusion` refusing an update). NavUKF repairs `P` and skips that sample instead of `BAD_*MAG` / `CovarianceInit`, so AHRS can keep UKF primary (no DCM flicker).
+- Dual-estimator RMS (medium GPS): `test.Plane.NavUKFEKF3RMS_UT` → `docs/navukf_rms_results_ut_medium_gps/`.
 - Sigma param sweep (UKF primary only): `test.Plane.NavUKFSigmaSweep` → `docs/navukf_sigma_sweep/`.
 - Tune/validate campaign: `test.PlaneTests1a.NavUKFTuneValidate` → `docs/navukf_tune_validate/`.
 - Optional EKF3-style log messages (beacon/timing/GSF detail) are trimmed to keep `LogMessages` under ID limits.
