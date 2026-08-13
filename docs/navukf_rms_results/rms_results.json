@@ -1,0 +1,83 @@
+{
+  "vehicle": "ArduPlane",
+  "frame": "plane",
+  "UKF_ALPHA": 0.35,
+  "UKF_BETA": 2.0,
+  "UKF_KAPPA": 0.0,
+  "medium_gps": false,
+  "flight_profile": "circle",
+  "notes": "Both EK3 and UKF enabled with IMU_MASK=1 (single core each on IMU0). RMS vs SIM attitude and SIM2 position/velocity; EKF/UKF position origin offset removed using first 10 armed samples in window. Flight profile=circle. UKF_ALPHA=0.35 UKF_BETA=2 UKF_KAPPA=0. Window starts 15s after CIRCLE entry (post climb-out).",
+  "generated_unix": 1786636807.3337681,
+  "runs": [
+    {
+      "primary": "EKF3",
+      "AHRS_EKF_TYPE": 3,
+      "medium_gps": false,
+      "flight_profile": "circle",
+      "status": "ok",
+      "compare_from_sim_s": 56.625,
+      "log": "/home/bobr/Github/mpylyp/ardupilot/docs/navukf_rms_results/run_ekf3_primary.bin",
+      "rms": {
+        "XKF1": {
+          "samples": 1992,
+          "rms_roll_deg": 0.09382329798605414,
+          "rms_pitch_deg": 0.18675225734242135,
+          "rms_yaw_deg": 0.45163074665626857,
+          "rms_attitude_deg": 0.4976439974447281,
+          "rms_pos_n_m": 0.4117260499805926,
+          "rms_pos_e_m": 0.8850249782669277,
+          "rms_pos_d_m": 0.09158385532121381,
+          "rms_position_m": 0.9803954074476758,
+          "rms_vel_ms": 0.1587396685207593
+        },
+        "UKF1": {
+          "samples": 1992,
+          "rms_roll_deg": 0.12767754784964977,
+          "rms_pitch_deg": 0.21635465640793958,
+          "rms_yaw_deg": 0.39384356158761125,
+          "rms_attitude_deg": 0.4671441368339238,
+          "rms_pos_n_m": 0.4122917998755598,
+          "rms_pos_e_m": 0.8995946505155321,
+          "rms_pos_d_m": 0.08658706263238246,
+          "rms_position_m": 0.9933541075045168,
+          "rms_vel_ms": 0.15908878375303892
+        }
+      }
+    },
+    {
+      "primary": "UKF",
+      "AHRS_EKF_TYPE": 4,
+      "medium_gps": false,
+      "flight_profile": "circle",
+      "status": "ok",
+      "compare_from_sim_s": 53.624,
+      "log": "/home/bobr/Github/mpylyp/ardupilot/docs/navukf_rms_results/run_ukf_primary.bin",
+      "rms": {
+        "XKF1": {
+          "samples": 1998,
+          "rms_roll_deg": 0.10203460717355199,
+          "rms_pitch_deg": 0.23606180371922764,
+          "rms_yaw_deg": 0.4588093351338953,
+          "rms_attitude_deg": 0.5259679098977839,
+          "rms_pos_n_m": 0.41681271381435886,
+          "rms_pos_e_m": 0.7896252009500406,
+          "rms_pos_d_m": 0.09081844068356505,
+          "rms_position_m": 0.8974902704435724,
+          "rms_vel_ms": 0.16595492957444544
+        },
+        "UKF1": {
+          "samples": 1998,
+          "rms_roll_deg": 0.1339301582440911,
+          "rms_pitch_deg": 0.24737035410916178,
+          "rms_yaw_deg": 0.38765071014132596,
+          "rms_attitude_deg": 0.47895976078628333,
+          "rms_pos_n_m": 0.41677712002522055,
+          "rms_pos_e_m": 0.7946493905987327,
+          "rms_pos_d_m": 0.08249537494146258,
+          "rms_position_m": 0.9010972803433528,
+          "rms_vel_ms": 0.16815749773790842
+        }
+      }
+    }
+  ]
+}
