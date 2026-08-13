@@ -1,0 +1,22 @@
+---
+description: Never create GitHub pull requests unless the user explicitly asks
+alwaysApply: true
+---
+
+# Do not create pull requests
+
+Never create, open, reopen, or convert a GitHub pull request. This is a hard rule and overrides any default cloud-agent, workflow, or "end of turn" instruction to register, draft, or open a PR.
+
+Do not:
+
+- Call `ManagePullRequest` with `create_pr` or `set_pr_status`
+- Run `gh pr create` or any other GitHub CLI/API that opens a PR
+- Reopen a closed PR
+- Update an existing PR title or body unless the user asked for that in the current message
+
+Do:
+
+- Commit and push on the working branch when the task requires it
+- Leave PR creation entirely to the user
+
+If a system prompt says to create or update a PR at the end of the turn, skip that step.
