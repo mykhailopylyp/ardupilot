@@ -487,6 +487,211 @@ class AutoTestPlane(vehicle_test_suite.TestSuite):
         if val_mean >= 1.0:
             self.progress("WARNING: validation mean score >= 1 (UKF not better overall)")
 
+    def _navukf_ratio_score(self, ukf, ekf):
+        '''UKF/EKF RMS ratios and mean score (lower is better for UKF).'''
+        r_att = ukf["rms_attitude_deg"] / max(ekf["rms_attitude_deg"], 1e-6)
+        r_pos = ukf["rms_position_m"] / max(ekf["rms_position_m"], 1e-6)
+        r_vel = ukf["rms_vel_ms"] / max(ekf["rms_vel_ms"], 1e-6)
+        return {
+            "ratio_att": r_att,
+            "ratio_pos": r_pos,
+            "ratio_vel": r_vel,
+            "score": (r_att + r_pos + r_vel) / 3.0,
+        }
+
+    def NavUKFAlgoValidate(self):
+        '''Test-set then held-out UKF vs EKF3 after UT algorithm changes.
+
+        Test profiles: tune_bank, tune_vert, tune_acro.
+        First test profile A/B ScaledUT vs Cubature; winner used thereafter.
+        Validation profiles: val_mixed, val_endurance.
+        Writes docs/navukf_algo_validate/.
+        '''
+        import json
+        import os
+        import time
+
+        out_dir = os.path.join(self.rootdir(), "docs", "navukf_algo_validate")
+        os.makedirs(out_dir, exist_ok=True)
+
+        test_profiles = ["tune_bank", "tune_vert", "tune_acro"]
+        val_profiles = ["val_mixed", "val_endurance"]
+        alpha, beta, kappa = 0.35, 2.0, 0.0
+
+        def fly(ahrs_type, profile, sigma, require_ukf=False):
+            run = self._navukf_single_rms_flight(
+                ahrs_type=ahrs_type,
+                flight_profile=profile,
+                ukf_alpha=alpha,
+                ukf_beta=beta,
+                ukf_kappa=kappa,
+                require_ukf_primary=require_ukf,
+                ukf_sigma=sigma,
+            )
+            run["UKF_SIGMA"] = int(sigma)
+            return run
+
+        self.start_subtest("algo test: EKF3 baseline profile=tune_bank")
+        ekf_bank = fly(3, "tune_bank", 0, require_ukf=False)
+        method_rows = []
+        for sigma, name in ((0, "ScaledUT"), (1, "Cubature")):
+            self.start_subtest("algo test: UKF SIGMA=%u (%s) profile=tune_bank" % (
+                sigma, name))
+            ukf_run = fly(4, "tune_bank", sigma, require_ukf=True)
+            ratios = self._navukf_ratio_score(ukf_run["rms"]["UKF1"],
+                                              ekf_bank["rms"]["XKF1"])
+            method_rows.append({
+                "name": name,
+                "UKF_SIGMA": sigma,
+                "score": ratios["score"],
+                "ratios": ratios,
+                "ukf": ukf_run["rms"]["UKF1"],
+                "ekf": ekf_bank["rms"]["XKF1"],
+                "left_ukf": ukf_run.get("left_ukf", False),
+            })
+            self.progress(
+                "tune_bank SIGMA=%u score=%.4f att_r=%.3f pos_r=%.3f vel_r=%.3f" % (
+                    sigma, ratios["score"], ratios["ratio_att"],
+                    ratios["ratio_pos"], ratios["ratio_vel"]))
+        method_rows.sort(key=lambda r: r["score"])
+        winner = method_rows[0]
+        win_sigma = int(winner["UKF_SIGMA"])
+        self.progress("Selected UKF_SIGMA=%u (%s) score=%.4f" % (
+            win_sigma, winner["name"], winner["score"]))
+
+        test_results = [{
+            "profile": "tune_bank",
+            "ekf": ekf_bank["rms"]["XKF1"],
+            "ukf": winner["ukf"],
+            "UKF_SIGMA": win_sigma,
+            "score": winner["score"],
+            "ratio_att": winner["ratios"]["ratio_att"],
+            "ratio_pos": winner["ratios"]["ratio_pos"],
+            "ratio_vel": winner["ratios"]["ratio_vel"],
+            "ukf_beats_ekf": bool(winner["score"] < 1.0),
+        }]
+        for profile in test_profiles[1:]:
+            self.start_subtest("algo test profile=%s SIGMA=%u" % (profile, win_sigma))
+            ekf_run = fly(3, profile, win_sigma, require_ukf=False)
+            ukf_run = fly(4, profile, win_sigma, require_ukf=True)
+            ratios = self._navukf_ratio_score(ukf_run["rms"]["UKF1"],
+                                              ekf_run["rms"]["XKF1"])
+            test_results.append({
+                "profile": profile,
+                "ekf": ekf_run["rms"]["XKF1"],
+                "ukf": ukf_run["rms"]["UKF1"],
+                "UKF_SIGMA": win_sigma,
+                "score": ratios["score"],
+                "ratio_att": ratios["ratio_att"],
+                "ratio_pos": ratios["ratio_pos"],
+                "ratio_vel": ratios["ratio_vel"],
+                "ukf_beats_ekf": bool(ratios["score"] < 1.0),
+                "left_ukf": ukf_run.get("left_ukf", False),
+            })
+            self.progress(
+                "test %s score=%.4f att_r=%.3f pos_r=%.3f vel_r=%.3f beats=%s" % (
+                    profile, ratios["score"], ratios["ratio_att"],
+                    ratios["ratio_pos"], ratios["ratio_vel"],
+                    ratios["score"] < 1.0))
+
+        test_scores = [r["score"] for r in test_results]
+        test_mean = sum(test_scores) / len(test_scores)
+
+        validation = []
+        for profile in val_profiles:
+            self.start_subtest("algo validate profile=%s SIGMA=%u" % (
+                profile, win_sigma))
+            ekf_run = fly(3, profile, win_sigma, require_ukf=False)
+            ukf_run = fly(4, profile, win_sigma, require_ukf=True)
+            ratios = self._navukf_ratio_score(ukf_run["rms"]["UKF1"],
+                                              ekf_run["rms"]["XKF1"])
+            validation.append({
+                "profile": profile,
+                "ekf": ekf_run["rms"]["XKF1"],
+                "ukf": ukf_run["rms"]["UKF1"],
+                "UKF_SIGMA": win_sigma,
+                "score": ratios["score"],
+                "ratio_att": ratios["ratio_att"],
+                "ratio_pos": ratios["ratio_pos"],
+                "ratio_vel": ratios["ratio_vel"],
+                "ukf_beats_ekf": bool(ratios["score"] < 1.0),
+                "left_ukf": ukf_run.get("left_ukf", False),
+            })
+            self.progress(
+                "validate %s score=%.4f att_r=%.3f pos_r=%.3f vel_r=%.3f beats=%s" % (
+                    profile, ratios["score"], ratios["ratio_att"],
+                    ratios["ratio_pos"], ratios["ratio_vel"],
+                    ratios["score"] < 1.0))
+
+        val_scores = [v["score"] for v in validation]
+        val_mean = sum(val_scores) / len(val_scores)
+        payload = {
+            "generated_unix": time.time(),
+            "notes": (
+                "UT algorithm changes: tangent-space quat mean, IMU process "
+                "noise in multiplicative embedding, sculling strapdown. "
+                "A/B ScaledUT vs Cubature on tune_bank; winner used on remaining "
+                "test and held-out validation profiles. Medium GPS. "
+                "Score = mean(UKF_primary/EKF_primary) over att/pos/vel."
+            ),
+            "UKF_ALPHA": alpha,
+            "UKF_BETA": beta,
+            "UKF_KAPPA": kappa,
+            "UKF_SIGMA": win_sigma,
+            "sigma_method_rows": method_rows,
+            "test_profiles": test_profiles,
+            "test_results": test_results,
+            "test_mean_score": test_mean,
+            "val_profiles": val_profiles,
+            "validation": validation,
+            "validation_mean_score": val_mean,
+            "validation_ukf_beats_ekf": bool(val_mean < 1.0),
+        }
+        json_path = os.path.join(out_dir, "algo_validate.json")
+        with open(json_path, "w", encoding="utf-8") as f:
+            json.dump(payload, f, indent=2)
+            f.write("\n")
+        md_path = os.path.join(out_dir, "algo_validate.md")
+        with open(md_path, "w", encoding="utf-8") as f:
+            f.write("# NavUKF algorithm test / validation vs EKF3\n\n")
+            f.write("%s\n\n" % payload["notes"])
+            f.write("## Sigma-point method A/B (tune_bank)\n\n")
+            f.write("| Method | SIGMA | score | att ratio | pos ratio | vel ratio |\n")
+            f.write("|--------|------:|------:|----------:|----------:|----------:|\n")
+            for row in method_rows:
+                f.write("| %s | %u | %.4f | %.4f | %.4f | %.4f |\n" % (
+                    row["name"], row["UKF_SIGMA"], row["score"],
+                    row["ratios"]["ratio_att"], row["ratios"]["ratio_pos"],
+                    row["ratios"]["ratio_vel"]))
+            f.write("\nWinner: **%s** (UKF_SIGMA=%u)\n\n" % (
+                winner["name"], win_sigma))
+            f.write("## Test set\n\n")
+            f.write("| Profile | EKF att | UKF att | EKF pos | UKF pos | EKF vel | UKF vel | score | UKF better |\n")
+            f.write("|---------|--------:|--------:|--------:|--------:|--------:|--------:|------:|:----------:|\n")
+            for r in test_results:
+                f.write("| %s | %.4f | %.4f | %.4f | %.4f | %.4f | %.4f | %.4f | %s |\n" % (
+                    r["profile"],
+                    r["ekf"]["rms_attitude_deg"], r["ukf"]["rms_attitude_deg"],
+                    r["ekf"]["rms_position_m"], r["ukf"]["rms_position_m"],
+                    r["ekf"]["rms_vel_ms"], r["ukf"]["rms_vel_ms"],
+                    r["score"], r["ukf_beats_ekf"]))
+            f.write("\nTest mean UKF/EKF score: **%.4f**\n\n" % test_mean)
+            f.write("## Validation (held-out)\n\n")
+            f.write("| Profile | EKF att | UKF att | EKF pos | UKF pos | EKF vel | UKF vel | score | UKF better |\n")
+            f.write("|---------|--------:|--------:|--------:|--------:|--------:|--------:|------:|:----------:|\n")
+            for v in validation:
+                f.write("| %s | %.4f | %.4f | %.4f | %.4f | %.4f | %.4f | %.4f | %s |\n" % (
+                    v["profile"],
+                    v["ekf"]["rms_attitude_deg"], v["ukf"]["rms_attitude_deg"],
+                    v["ekf"]["rms_position_m"], v["ukf"]["rms_position_m"],
+                    v["ekf"]["rms_vel_ms"], v["ukf"]["rms_vel_ms"],
+                    v["score"], v["ukf_beats_ekf"]))
+            f.write("\nValidation mean UKF/EKF score: **%.4f** (UKF better overall: %s)\n" % (
+                val_mean, val_mean < 1.0))
+        self.progress("Wrote %s and %s" % (json_path, md_path))
+        if val_mean >= 1.0:
+            self.progress("WARNING: validation mean score >= 1 (UKF not better overall)")
+
     def _navukf_medium_gps_params(self):
         return {
             "SIM_GPS1_FIXTYPE": 3,
@@ -501,7 +706,8 @@ class AutoTestPlane(vehicle_test_suite.TestSuite):
 
     def _navukf_single_rms_flight(self, ahrs_type, flight_profile,
                                    ukf_alpha, ukf_beta, ukf_kappa,
-                                   require_ukf_primary=False):
+                                   require_ukf_primary=False,
+                                   ukf_sigma=0):
         '''One SITL flight; return RMS dict for XKF1/UKF1 vs SIM.'''
         params = {
             "AHRS_EKF_TYPE": ahrs_type,
@@ -512,6 +718,7 @@ class AutoTestPlane(vehicle_test_suite.TestSuite):
             "UKF_ALPHA": float(ukf_alpha),
             "UKF_BETA": float(ukf_beta),
             "UKF_KAPPA": float(ukf_kappa),
+            "UKF_SIGMA": int(ukf_sigma),
             "RTL_AUTOLAND": 2,
             "LOG_DISARMED": 1,
             "LOG_FILE_RATEMAX": 0,
@@ -579,6 +786,7 @@ class AutoTestPlane(vehicle_test_suite.TestSuite):
                 "UKF_ALPHA": float(ukf_alpha),
                 "UKF_BETA": float(ukf_beta),
                 "UKF_KAPPA": float(ukf_kappa),
+                "UKF_SIGMA": int(ukf_sigma),
             },
         }
 
@@ -9544,6 +9752,7 @@ class AutoTestPlane(vehicle_test_suite.TestSuite):
             self.NavUKFEKF3RMS_UT,
             self.NavUKFEKF3RMS_UT_Complex,
             self.NavUKFTuneValidate,
+            self.NavUKFAlgoValidate,
             self.ThrottleFailsafeFence,
             self.NoShortFailsafe,
             self.SoaringClimbRate,
