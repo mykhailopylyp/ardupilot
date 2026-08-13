@@ -239,18 +239,16 @@ class AutoTestPlane(vehicle_test_suite.TestSuite):
         '''
         self._navukf_ekf3_rms_flights(
             out_subdir="navukf_rms_results",
-            use_ut=0,
             medium_gps=False,
             title="NavUKF vs EKF3 SITL RMS (vs SIM truth)",
         )
 
     def NavUKFEKF3RMS_UT(self):
-        '''Same as NavUKFEKF3RMS but UKF_USE_UT=1 and medium-quality GPS model.
+        '''Same as NavUKFEKF3RMS but with a medium-quality GPS model.
         Writes under docs/navukf_rms_results_ut_medium_gps/.
         '''
         self._navukf_ekf3_rms_flights(
             out_subdir="navukf_rms_results_ut_medium_gps",
-            use_ut=1,
             medium_gps=True,
             title="NavUKF (UT) vs EKF3 SITL RMS - medium GPS",
             ukf_alpha=0.35,
@@ -267,9 +265,8 @@ class AutoTestPlane(vehicle_test_suite.TestSuite):
         '''
         self._navukf_ekf3_rms_flights(
             out_subdir="navukf_rms_results_ut_complex",
-            use_ut=1,
             medium_gps=True,
-            title="NavUKF (UT) vs EKF3 SITL RMS - complex long route",
+            title="NavUKF vs EKF3 SITL RMS - complex long route",
             ukf_alpha=0.35,
             ukf_beta=2.0,
             ukf_kappa=0.0,
@@ -435,7 +432,7 @@ class AutoTestPlane(vehicle_test_suite.TestSuite):
                 "Tune UKF_ALPHA/BETA/KAPPA on held-in complex profiles; "
                 "score = mean(UKF_primary/EKF_primary) over att/pos/vel. "
                 "Validate on held-out profiles with winning params. "
-                "Medium GPS; UKF_USE_UT=1."
+                "Medium GPS."
             ),
             "tune_profiles": tune_profiles,
             "val_profiles": val_profiles,
@@ -512,7 +509,6 @@ class AutoTestPlane(vehicle_test_suite.TestSuite):
             "EK3_IMU_MASK": 1,
             "UKF_ENABLE": 1,
             "UKF_IMU_MASK": 1,
-            "UKF_USE_UT": 1,
             "UKF_ALPHA": float(ukf_alpha),
             "UKF_BETA": float(ukf_beta),
             "UKF_KAPPA": float(ukf_kappa),
@@ -807,7 +803,6 @@ class AutoTestPlane(vehicle_test_suite.TestSuite):
                     "EK3_IMU_MASK": 1,
                     "UKF_ENABLE": 1,
                     "UKF_IMU_MASK": 1,
-                    "UKF_USE_UT": 1,
                     "UKF_ALPHA": float(alpha),
                     "UKF_BETA": float(beta),
                     "UKF_KAPPA": float(kappa),
@@ -893,7 +888,7 @@ class AutoTestPlane(vehicle_test_suite.TestSuite):
                     r["xkf_att_deg"] or float("nan")))
         self.progress("Wrote %s and %s" % (out_path, md_path))
 
-    def _navukf_ekf3_rms_flights(self, out_subdir, use_ut, medium_gps, title,
+    def _navukf_ekf3_rms_flights(self, out_subdir, medium_gps, title,
                                   ukf_alpha=None, ukf_beta=None, ukf_kappa=None,
                                   flight_profile="circle"):
         '''Shared dual-estimator RMS campaign used by NavUKFEKF3RMS variants.'''
@@ -929,15 +924,14 @@ class AutoTestPlane(vehicle_test_suite.TestSuite):
 
         runs = []
         for primary_name, ahrs_type in (("EKF3", 3), ("UKF", 4)):
-            self.start_subtest("RMS flight AHRS primary=%s use_ut=%u medium_gps=%u profile=%s" % (
-                primary_name, int(use_ut), int(medium_gps), flight_profile))
+            self.start_subtest("RMS flight AHRS primary=%s medium_gps=%u profile=%s" % (
+                primary_name, int(medium_gps), flight_profile))
             params = {
                 "AHRS_EKF_TYPE": ahrs_type,
                 "EK3_ENABLE": 1,
                 "EK3_IMU_MASK": 1,
                 "UKF_ENABLE": 1,
                 "UKF_IMU_MASK": 1,
-                "UKF_USE_UT": int(use_ut),
                 "UKF_ALPHA": float(ukf_alpha),
                 "UKF_BETA": float(ukf_beta),
                 "UKF_KAPPA": float(ukf_kappa),
@@ -985,7 +979,6 @@ class AutoTestPlane(vehicle_test_suite.TestSuite):
             runs.append({
                 "primary": primary_name,
                 "AHRS_EKF_TYPE": ahrs_type,
-                "UKF_USE_UT": int(use_ut),
                 "medium_gps": bool(medium_gps),
                 "flight_profile": flight_profile,
                 "status": "ok",
@@ -999,9 +992,9 @@ class AutoTestPlane(vehicle_test_suite.TestSuite):
             "RMS vs SIM attitude and SIM2 position/velocity; EKF/UKF position "
             "origin offset removed using first 10 armed samples in window. "
             "Flight profile=%s. "
-            "UKF_USE_UT=%u UKF_ALPHA=%g UKF_BETA=%g UKF_KAPPA=%g." % (
+            "UKF_ALPHA=%g UKF_BETA=%g UKF_KAPPA=%g." % (
                 flight_profile,
-                int(use_ut), float(ukf_alpha), float(ukf_beta), float(ukf_kappa))
+                float(ukf_alpha), float(ukf_beta), float(ukf_kappa))
         )
         if flight_profile == "complex":
             notes += (
@@ -1019,7 +1012,6 @@ class AutoTestPlane(vehicle_test_suite.TestSuite):
         payload = {
             "vehicle": "ArduPlane",
             "frame": "plane",
-            "UKF_USE_UT": int(use_ut),
             "UKF_ALPHA": float(ukf_alpha),
             "UKF_BETA": float(ukf_beta),
             "UKF_KAPPA": float(ukf_kappa),
