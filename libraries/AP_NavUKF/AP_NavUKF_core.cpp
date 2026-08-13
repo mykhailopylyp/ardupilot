@@ -1097,49 +1097,6 @@ void NavUKF_core::forceCovariancePSD(ftype A[24][24], ftype scratch[24][24], uin
     }
 }
 
-// Map IMU process noise into the same multiplicative-quaternion / NED-velocity
-// embedding used by UT residuals. Gyro variances are scaled by 4 so that
-// ||J col||^2 * 4 = 1 matches the rotation-vector variance in the 0.5*dtheta
-// embedding (unscaled J Q J' under-noises attitude and over-trusts the IMU).
-static void add_imu_process_noise(ftype P[24][24],
-                                  const ftype q[4],
-                                  const Matrix3F &Tnb,
-                                  ftype daxVar, ftype dayVar, ftype dazVar,
-                                  ftype dvxVar, ftype dvyVar, ftype dvzVar)
-{
-    const ftype J[4][3] = {
-        { -0.5f * q[1], -0.5f * q[2], -0.5f * q[3] },
-        {  0.5f * q[0], -0.5f * q[3],  0.5f * q[2] },
-        {  0.5f * q[3],  0.5f * q[0], -0.5f * q[1] },
-        { -0.5f * q[2],  0.5f * q[1],  0.5f * q[0] },
-    };
-    const ftype gvar[3] = { 4.0f * daxVar, 4.0f * dayVar, 4.0f * dazVar };
-    for (uint8_t a = 0; a < 3; a++) {
-        for (uint8_t i = 0; i < 4; i++) {
-            for (uint8_t j = i; j < 4; j++) {
-                const ftype add = J[i][a] * gvar[a] * J[j][a];
-                P[i][j] += add;
-                if (i != j) {
-                    P[j][i] += add;
-                }
-            }
-        }
-    }
-    const ftype avar[3] = { dvxVar, dvyVar, dvzVar };
-    for (uint8_t a = 0; a < 3; a++) {
-        const ftype t[3] = { Tnb[a][0], Tnb[a][1], Tnb[a][2] };
-        for (uint8_t i = 0; i < 3; i++) {
-            for (uint8_t j = i; j < 3; j++) {
-                const ftype add = t[i] * avar[a] * t[j];
-                P[4 + i][4 + j] += add;
-                if (i != j) {
-                    P[4 + j][4 + i] += add;
-                }
-            }
-        }
-    }
-}
-
 void NavUKF_core::CovariancePredictionUT(Vector3F *rotVarVecPtr)
 {
     ftype daxVar;       // X axis delta angle noise variance rad^2
@@ -1309,9 +1266,9 @@ void NavUKF_core::CovariancePredictionUT(Vector3F *rotVarVecPtr)
         mean0[i] = stateBeforePredict[i];
     }
     if (!drawSigmaPoints(mean0)) {
-        // Stay on UT path: inject IMU noise in the tangent embedding and skip this sigma step
-        add_imu_process_noise(P, mean0, prevTnb,
-                              daxVar, dayVar, dazVar, dvxVar, dvyVar, dvzVar);
+        // Stay on UT path: inflate diagonals only and skip this sigma step
+        P[0][0] += daxVar; P[1][1] += dayVar; P[2][2] += dazVar; P[3][3] += daxVar;
+        P[4][4] += dvxVar; P[5][5] += dvyVar; P[6][6] += dvzVar;
         if (stateIndexLim > 9) {
             for (uint8_t i = 10; i <= stateIndexLim; i++) {
                 P[i][i] += processNoiseVariance[i - 10];
@@ -1338,35 +1295,28 @@ void NavUKF_core::CovariancePredictionUT(Vector3F *rotVarVecPtr)
     }
 
     ftype mean[24] = {};
-    // Tangent-space quaternion mean (USQUE-style): average rotation vectors
-    // relative to the propagated central sigma point, then exp-map back.
+    const ftype qref[4] = { sigma_prop[0][0], sigma_prop[0][1], sigma_prop[0][2], sigma_prop[0][3] };
+    for (uint8_t s = 0; s < n_sigma; s++) {
+        const ftype W = (s == 0) ? Wm0 : Wi;
+        ftype qsgn = 1.0f;
+        if ((sigma_prop[s][0] * qref[0] + sigma_prop[s][1] * qref[1] +
+             sigma_prop[s][2] * qref[2] + sigma_prop[s][3] * qref[3]) < 0) {
+            qsgn = -1.0f;
+        }
+        for (uint8_t j = 0; j < 4; j++) {
+            mean[j] += W * qsgn * sigma_prop[s][j];
+        }
+        for (uint8_t j = 4; j < n; j++) {
+            mean[j] += W * sigma_prop[s][j];
+        }
+    }
     {
-        QuaternionF qref(sigma_prop[0][0], sigma_prop[0][1], sigma_prop[0][2], sigma_prop[0][3]);
-        qref.normalize();
-        Vector3F dtheta_bar(0.0f, 0.0f, 0.0f);
-        for (uint8_t s = 0; s < n_sigma; s++) {
-            const ftype W = (s == 0) ? Wm0 : Wi;
-            QuaternionF q_s(sigma_prop[s][0], sigma_prop[s][1], sigma_prop[s][2], sigma_prop[s][3]);
-            if ((q_s[0]*qref[0] + q_s[1]*qref[1] + q_s[2]*qref[2] + q_s[3]*qref[3]) < 0) {
-                q_s[0] = -q_s[0]; q_s[1] = -q_s[1]; q_s[2] = -q_s[2]; q_s[3] = -q_s[3];
-            }
-            QuaternionF qerr = qref.inverse() * q_s;
-            if (qerr[0] < 0) {
-                qerr[0] = -qerr[0]; qerr[1] = -qerr[1]; qerr[2] = -qerr[2]; qerr[3] = -qerr[3];
-            }
-            Vector3F dtheta;
-            qerr.to_axis_angle(dtheta);
-            dtheta_bar += dtheta * W;
-            for (uint8_t j = 4; j < n; j++) {
-                mean[j] += W * sigma_prop[s][j];
+        const ftype qn = sqrtF(sq(mean[0]) + sq(mean[1]) + sq(mean[2]) + sq(mean[3]));
+        if (qn > 0) {
+            for (uint8_t j = 0; j < 4; j++) {
+                mean[j] /= qn;
             }
         }
-        qref.rotate(dtheta_bar);
-        qref.normalize();
-        mean[0] = qref[0];
-        mean[1] = qref[1];
-        mean[2] = qref[2];
-        mean[3] = qref[3];
     }
 
     for (uint8_t i = 0; i < n; i++) {
@@ -1406,14 +1356,8 @@ void NavUKF_core::CovariancePredictionUT(Vector3F *rotVarVecPtr)
         }
     }
 
-    Matrix3F Tnb0;
-    {
-        QuaternionF q0(mean0[0], mean0[1], mean0[2], mean0[3]);
-        q0.normalize();
-        q0.inverse().rotation_matrix(Tnb0);
-    }
-    add_imu_process_noise(nextP, mean, Tnb0,
-                          daxVar, dayVar, dazVar, dvxVar, dvyVar, dvzVar);
+    nextP[0][0] += daxVar; nextP[1][1] += dayVar; nextP[2][2] += dazVar; nextP[3][3] += daxVar;
+    nextP[4][4] += dvxVar; nextP[5][5] += dvyVar; nextP[6][6] += dvzVar;
     if (stateIndexLim > 9) {
         for (uint8_t i = 10; i <= stateIndexLim; i++) {
             nextP[i][i] += processNoiseVariance[i - 10];
