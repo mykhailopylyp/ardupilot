@@ -629,10 +629,11 @@ class AutoTestPlane(vehicle_test_suite.TestSuite):
             "generated_unix": time.time(),
             "notes": (
                 "UT algorithm changes: tangent-space quat mean, IMU process "
-                "noise in multiplicative embedding, sculling strapdown. "
-                "A/B ScaledUT vs Cubature on tune_bank; winner used on remaining "
-                "test and held-out validation profiles. Medium GPS. "
-                "Score = mean(UKF_primary/EKF_primary) over att/pos/vel."
+                "noise mapped through the multiplicative attitude embedding "
+                "(gyro Q scaled to rotation-vector variance), optional cubature "
+                "sigma points. A/B ScaledUT vs Cubature on tune_bank; winner "
+                "used on remaining test and held-out validation profiles. "
+                "Medium GPS. Score = mean(UKF_primary/EKF_primary) over att/pos/vel."
             ),
             "UKF_ALPHA": alpha,
             "UKF_BETA": beta,
