@@ -22,6 +22,7 @@ Prefix: `UKF_`
 | `UKF_ALPHA` | Unscented transform α (default `0.35`). |
 | `UKF_BETA` | Unscented transform β (default `2`). |
 | `UKF_KAPPA` | Unscented transform κ (default `0`). |
+| `UKF_SIGMA` | Sigma-point method: `0` van der Merwe scaled UT, `1` spherical cubature. |
 | Other `UKF_*` | Ported from EKF3 noise/gate/source parameters (`GYRO_P_NSE`, `ACC_P_NSE`, GPS/baro/mag gates, `SRC*`, …). |
 
 AHRS:
@@ -101,6 +102,7 @@ Tools/autotest/autotest.py build.Plane test.Plane.NavUKFSmoke --force-ahrs-type=
 - Dual-estimator RMS (medium GPS): `test.Plane.NavUKFEKF3RMS_UT` → `docs/navukf_rms_results_ut_medium_gps/`.
 - Sigma param sweep (UKF primary only): `test.Plane.NavUKFSigmaSweep` → `docs/navukf_sigma_sweep/`.
 - Tune/validate campaign: `test.PlaneTests1a.NavUKFTuneValidate` → `docs/navukf_tune_validate/`.
+- Algorithm test/validation vs EKF3: `test.Plane.NavUKFAlgoValidate` → `docs/navukf_algo_validate/`.
 - Optional EKF3-style log messages (beacon/timing/GSF detail) are trimmed to keep `LogMessages` under ID limits.
 - Prefer comparing UKF vs EKF3 on the same SITL mission before any flight use.
 - Do not set UKF as default for production vehicles without maintainer review.
