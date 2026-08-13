@@ -725,7 +725,6 @@ private:
     // Argument rotVarVecPtr is pointer to a vector defining the earth frame uncertainty variance of the quaternion states
     // used to perform a reset of the quaternion state covariances only. Set to null for normal operation.
     void CovariancePrediction(Vector3F *rotVarVecPtr);
-    void CovariancePredictionEKF(Vector3F *rotVarVecPtr);
     void CovariancePredictionUT(Vector3F *rotVarVecPtr);
 
     // In-place lower Cholesky of an n×n matrix stored in A (uses lower triangle).
@@ -755,6 +754,47 @@ private:
     // returns true and skips fusion if variances would be driven negative.
     // force skips this negative check; passing true is probably a bug!
     bool FinishFusion(ftype innov, bool force = false);
+
+    // Scalar unscented-transform measurement types for FuseScalarUT.
+    enum class UKFObs : uint8_t {
+        State = 0,
+        MagX,
+        MagY,
+        MagZ,
+        Yaw321,
+        Yaw312,
+        Declination,
+        TAS,
+        Beta,
+        DragX,
+        DragY,
+        FlowX,
+        FlowY,
+        BodyVelX,
+        BodyVelY,
+        BodyVelZ,
+        RngBcn,
+    };
+
+    // Draw 2n+1 sigma points from mean and P into sigma_prop (multiplicative attitude).
+    // Returns false if weights/Cholesky fail (P is not modified).
+    bool drawSigmaPoints(const ftype *mean);
+
+    // h(x) for a scalar observation. Uses ut_obs for extra geometry/model data.
+    ftype predictObservation(const ftype x[24], UKFObs obs) const;
+
+    // Compute UT innov, varInnov and Kfusion. Returns true if the update must be skipped
+    // (ill-conditioned P or Pzz < R); repairs P with forceCovariancePSD in that case.
+    bool ukfComputeUpdate(ftype z_meas, ftype R, UKFObs obs, uint32_t kalman_mask,
+                          ftype &innov, ftype &varInnov, bool wrap_angle = false);
+
+    // Apply Kfusion from ukfComputeUpdate. innov may be modified by the caller first.
+    // Returns FinishFusion result (true = skipped).
+    bool ukfApplyUpdate(ftype innov, ftype varInnov, bool force = false);
+
+    // Draw sigma points, compute K, and apply the update.
+    bool FuseScalarUT(ftype z_meas, ftype R, UKFObs obs, uint32_t kalman_mask,
+                      ftype &innov, ftype &varInnov, bool force = false, bool wrap_angle = false);
 
     // constrain states
     void ConstrainStates();
@@ -1111,6 +1151,23 @@ private:
     Vector24 stateBeforePredict;    // state snapshot before strapdown (for UKF)
     Matrix3F prevTnbBeforePredict;  // Tnb snapshot before strapdown
     ftype sigma_prop[49][24];       // propagated sigma points (2*n+1), n<=24
+    ftype ukf_Wm0, ukf_Wc0, ukf_Wi; // scaled UT weights from last drawSigmaPoints
+    uint8_t ukf_n, ukf_n_sigma;     // state and sigma counts from last drawSigmaPoints
+    struct {
+        uint8_t state_index;
+        Vector3F pos_offset_body;
+        Vector3F body_rate;
+        ftype range;
+        Vector3F bcn_pos;
+        ftype drag_bcoef_x;
+        ftype drag_bcoef_y;
+        ftype drag_mcoef;
+        ftype drag_rho;
+        ftype drag_density_ratio;
+        bool using_bcoef_x;
+        bool using_bcoef_y;
+        bool using_mcoef;
+    } ut_obs;
     EKF_IMU_buffer_t<imu_elements> storedIMU;      // IMU data buffer
     EKF_obs_buffer_t<gps_elements> storedGPS;      // GPS data buffer
     EKF_obs_buffer_t<mag_elements> storedMag;      // Magnetometer data buffer

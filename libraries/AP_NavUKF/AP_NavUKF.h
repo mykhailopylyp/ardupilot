@@ -418,7 +418,6 @@ private:
     AP_Float _ukf_alpha;            // unscented transform alpha
     AP_Float _ukf_beta;             // unscented transform beta
     AP_Float _ukf_kappa;            // unscented transform kappa
-    AP_Int8  _ukf_use_ut;           // 0: Jacobian cov predict, 1: unscented cov predict
     AP_Float _gyroBiasProcessNoise; // gyro bias state process noise : rad/s
     AP_Float _accelBiasProcessNoise;// accel bias state process noise : m/s^2
     AP_Int16 _hgtDelay_ms;          // effective average delay of Height measurements relative to inertial measurements (msec)

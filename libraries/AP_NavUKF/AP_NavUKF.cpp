@@ -794,13 +794,6 @@ const AP_Param::GroupInfo NavUKF::var_info2[] = {
     // @User: Advanced
     AP_GROUPINFO("KAPPA", 14, NavUKF, _ukf_kappa, 0.0f),
 
-    // @Param: USE_UT
-    // @DisplayName: Use unscented transform covariance prediction
-    // @Description: 0: use EKF3-equivalent Jacobian covariance prediction (stable default). 1: use covariance-only unscented transform (experimental; requires ALPHA/BETA/KAPPA). Measurement updates remain EKF-style in both modes.
-    // @Values: 0:Jacobian,1:Unscented
-    // @User: Advanced
-    AP_GROUPINFO("USE_UT", 15, NavUKF, _ukf_use_ut, 0),
-
     AP_GROUPEND
 };
 

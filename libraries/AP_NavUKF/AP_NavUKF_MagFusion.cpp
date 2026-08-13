@@ -466,378 +466,65 @@ void NavUKF_core::SelectMagFusion()
 }
 
 /*
- * Fuse magnetometer measurements using explicit algebraic equations generated with Matlab symbolic toolbox.
- * The script file used to generate these and other equations in this filter can be found here:
- * https://github.com/PX4/ecl/blob/master/matlab/scripts/Inertial%20Nav%20EKF/GenerateNavFilterEquations.m
+ * Fuse magnetometer measurements using an unscented transform.
 */
 void NavUKF_core::FuseMagnetometer()
 {
-    // perform sequential fusion of magnetometer measurements.
-    // this assumes that the errors in the different components are
-    // uncorrelated which is not true, however in the absence of covariance
-    // data fit is the only assumption we can make
-    // so we might as well take advantage of the computational efficiencies
-    // associated with sequential fusion
-    // calculate observation jacobians and Kalman gains
-
-    // create aliases for state to make code easier to read:
-    const ftype q0       = stateStruct.quat[0];
-    const ftype q1       = stateStruct.quat[1];
-    const ftype q2       = stateStruct.quat[2];
-    const ftype q3       = stateStruct.quat[3];
-    const ftype magN     = stateStruct.earth_magfield[0];
-    const ftype magE     = stateStruct.earth_magfield[1];
-    const ftype magD     = stateStruct.earth_magfield[2];
-    const ftype magXbias = stateStruct.body_magfield[0];
-    const ftype magYbias = stateStruct.body_magfield[1];
-    const ftype magZbias = stateStruct.body_magfield[2];
-
-    // rotate predicted earth components into body axes and calculate
-    // predicted measurements
-    const Matrix3F DCM {
-        q0*q0 + q1*q1 - q2*q2 - q3*q3,
-        2.0f*(q1*q2 + q0*q3),
-        2.0f*(q1*q3-q0*q2),
-        2.0f*(q1*q2 - q0*q3),
-        q0*q0 - q1*q1 + q2*q2 - q3*q3,
-        2.0f*(q2*q3 + q0*q1),
-        2.0f*(q1*q3 + q0*q2),
-        2.0f*(q2*q3 - q0*q1),
-        q0*q0 - q1*q1 - q2*q2 + q3*q3
-    };
-
-    const Vector3F MagPred {
-        DCM[0][0]*magN + DCM[0][1]*magE  + DCM[0][2]*magD + magXbias,
-        DCM[1][0]*magN + DCM[1][1]*magE  + DCM[1][2]*magD + magYbias,
-        DCM[2][0]*magN + DCM[2][1]*magE  + DCM[2][2]*magD + magZbias
-    };
-
-    // calculate the measurement innovation for each axis
-    innovMag = MagPred - magDataDelayed.mag;
-
-    // scale magnetometer observation error with total angular rate to allow for timing errors
+    // Sequential unscented fusion of magnetometer XYZ. Observation is
+    // body-frame field: DCM(q)*earth_mag + body_mag.
     const ftype R_MAG = sq(constrain_ftype(frontend->_magNoise, 0.01f, 0.5f)) + sq(frontend->magVarRateScale*imuDataDelayed.delAng.length() / imuDataDelayed.delAngDT);
+    const UKFObs mag_obs[3] = { UKFObs::MagX, UKFObs::MagY, UKFObs::MagZ };
+    const ftype mag_meas[3] = { magDataDelayed.mag.x, magDataDelayed.mag.y, magDataDelayed.mag.z };
 
-    // calculate common expressions used to calculate observation jacobians an innovation variance for each component
-    const Vector9 SH_MAG {
-        2.0f*magD*q3 + 2.0f*magE*q2 + 2.0f*magN*q1,
-        2.0f*magD*q0 - 2.0f*magE*q1 + 2.0f*magN*q2,
-        2.0f*magD*q1 + 2.0f*magE*q0 - 2.0f*magN*q3,
-        sq(q3),
-        sq(q2),
-        sq(q1),
-        sq(q0),
-        2.0f*magN*q0,
-        2.0f*magE*q3
-    };
-
-    // Calculate the innovation variance for each axis
-    // X axis
-    varInnovMag[0] = (P[19][19] + R_MAG + P[1][19]*SH_MAG[0] - P[2][19]*SH_MAG[1] + P[3][19]*SH_MAG[2] - P[16][19]*(SH_MAG[3] + SH_MAG[4] - SH_MAG[5] - SH_MAG[6]) + (2.0f*q0*q3 + 2.0f*q1*q2)*(P[19][17] + P[1][17]*SH_MAG[0] - P[2][17]*SH_MAG[1] + P[3][17]*SH_MAG[2] - P[16][17]*(SH_MAG[3] + SH_MAG[4] - SH_MAG[5] - SH_MAG[6]) + P[17][17]*(2.0f*q0*q3 + 2.0f*q1*q2) - P[18][17]*(2.0f*q0*q2 - 2.0f*q1*q3) + P[0][17]*(SH_MAG[7] + SH_MAG[8] - 2.0f*magD*q2)) - (2.0f*q0*q2 - 2.0f*q1*q3)*(P[19][18] + P[1][18]*SH_MAG[0] - P[2][18]*SH_MAG[1] + P[3][18]*SH_MAG[2] - P[16][18]*(SH_MAG[3] + SH_MAG[4] - SH_MAG[5] - SH_MAG[6]) + P[17][18]*(2.0f*q0*q3 + 2.0f*q1*q2) - P[18][18]*(2.0f*q0*q2 - 2.0f*q1*q3) + P[0][18]*(SH_MAG[7] + SH_MAG[8] - 2.0f*magD*q2)) + (SH_MAG[7] + SH_MAG[8] - 2.0f*magD*q2)*(P[19][0] + P[1][0]*SH_MAG[0] - P[2][0]*SH_MAG[1] + P[3][0]*SH_MAG[2] - P[16][0]*(SH_MAG[3] + SH_MAG[4] - SH_MAG[5] - SH_MAG[6]) + P[17][0]*(2.0f*q0*q3 + 2.0f*q1*q2) - P[18][0]*(2.0f*q0*q2 - 2.0f*q1*q3) + P[0][0]*(SH_MAG[7] + SH_MAG[8] - 2.0f*magD*q2)) + P[17][19]*(2.0f*q0*q3 + 2.0f*q1*q2) - P[18][19]*(2.0f*q0*q2 - 2.0f*q1*q3) + SH_MAG[0]*(P[19][1] + P[1][1]*SH_MAG[0] - P[2][1]*SH_MAG[1] + P[3][1]*SH_MAG[2] - P[16][1]*(SH_MAG[3] + SH_MAG[4] - SH_MAG[5] - SH_MAG[6]) + P[17][1]*(2.0f*q0*q3 + 2.0f*q1*q2) - P[18][1]*(2.0f*q0*q2 - 2.0f*q1*q3) + P[0][1]*(SH_MAG[7] + SH_MAG[8] - 2.0f*magD*q2)) - SH_MAG[1]*(P[19][2] + P[1][2]*SH_MAG[0] - P[2][2]*SH_MAG[1] + P[3][2]*SH_MAG[2] - P[16][2]*(SH_MAG[3] + SH_MAG[4] - SH_MAG[5] - SH_MAG[6]) + P[17][2]*(2.0f*q0*q3 + 2.0f*q1*q2) - P[18][2]*(2.0f*q0*q2 - 2.0f*q1*q3) + P[0][2]*(SH_MAG[7] + SH_MAG[8] - 2.0f*magD*q2)) + SH_MAG[2]*(P[19][3] + P[1][3]*SH_MAG[0] - P[2][3]*SH_MAG[1] + P[3][3]*SH_MAG[2] - P[16][3]*(SH_MAG[3] + SH_MAG[4] - SH_MAG[5] - SH_MAG[6]) + P[17][3]*(2.0f*q0*q3 + 2.0f*q1*q2) - P[18][3]*(2.0f*q0*q2 - 2.0f*q1*q3) + P[0][3]*(SH_MAG[7] + SH_MAG[8] - 2.0f*magD*q2)) - (SH_MAG[3] + SH_MAG[4] - SH_MAG[5] - SH_MAG[6])*(P[19][16] + P[1][16]*SH_MAG[0] - P[2][16]*SH_MAG[1] + P[3][16]*SH_MAG[2] - P[16][16]*(SH_MAG[3] + SH_MAG[4] - SH_MAG[5] - SH_MAG[6]) + P[17][16]*(2.0f*q0*q3 + 2.0f*q1*q2) - P[18][16]*(2.0f*q0*q2 - 2.0f*q1*q3) + P[0][16]*(SH_MAG[7] + SH_MAG[8] - 2.0f*magD*q2)) + P[0][19]*(SH_MAG[7] + SH_MAG[8] - 2.0f*magD*q2));
-    if (varInnovMag[0] >= R_MAG) {
-        faultStatus.bad_xmag = false;
-    } else {
-        // Ill-conditioned HPH'+R (P not PSD). With UT, repair and skip without
-        // BAD_*MAG/CovarianceInit — those clear AHRS UKF primary (DCM flicker).
-        if (frontend->_ukf_use_ut != 0) {
-            forceCovariancePSD(P, sigma_prop, uint8_t(stateIndexLim + 1));
-            return;
+    uint32_t kalman_mask = (1<<10)-1;
+    if (!inhibitDelAngBiasStates) {
+        kalman_mask |= (1<<10) | (1<<11) | (1<<12);
+    }
+    if (!inhibitDelVelBiasStates) {
+        for (uint8_t index = 0; index < 3; index++) {
+            if (!dvelBiasAxisInhibit[index]) {
+                kalman_mask |= (1<<(index + 13));
+            }
         }
-        CovarianceInit();
-        faultStatus.bad_xmag = true;
-        return;
+    }
+    if (!inhibitMagStates) {
+        kalman_mask |= (1<<16) | (1<<17) | (1<<18) | (1<<19) | (1<<20) | (1<<21);
+    }
+    if (!inhibitWindStates && !treatWindStatesAsTruth) {
+        kalman_mask |= (1<<22) | (1<<23);
     }
 
-    // Y axis
-    varInnovMag[1] = (P[20][20] + R_MAG + P[0][20]*SH_MAG[2] + P[1][20]*SH_MAG[1] + P[2][20]*SH_MAG[0] - P[17][20]*(SH_MAG[3] - SH_MAG[4] + SH_MAG[5] - SH_MAG[6]) - (2.0f*q0*q3 - 2.0f*q1*q2)*(P[20][16] + P[0][16]*SH_MAG[2] + P[1][16]*SH_MAG[1] + P[2][16]*SH_MAG[0] - P[17][16]*(SH_MAG[3] - SH_MAG[4] + SH_MAG[5] - SH_MAG[6]) - P[16][16]*(2.0f*q0*q3 - 2.0f*q1*q2) + P[18][16]*(2.0f*q0*q1 + 2.0f*q2*q3) - P[3][16]*(SH_MAG[7] + SH_MAG[8] - 2.0f*magD*q2)) + (2.0f*q0*q1 + 2.0f*q2*q3)*(P[20][18] + P[0][18]*SH_MAG[2] + P[1][18]*SH_MAG[1] + P[2][18]*SH_MAG[0] - P[17][18]*(SH_MAG[3] - SH_MAG[4] + SH_MAG[5] - SH_MAG[6]) - P[16][18]*(2.0f*q0*q3 - 2.0f*q1*q2) + P[18][18]*(2.0f*q0*q1 + 2.0f*q2*q3) - P[3][18]*(SH_MAG[7] + SH_MAG[8] - 2.0f*magD*q2)) - (SH_MAG[7] + SH_MAG[8] - 2.0f*magD*q2)*(P[20][3] + P[0][3]*SH_MAG[2] + P[1][3]*SH_MAG[1] + P[2][3]*SH_MAG[0] - P[17][3]*(SH_MAG[3] - SH_MAG[4] + SH_MAG[5] - SH_MAG[6]) - P[16][3]*(2.0f*q0*q3 - 2.0f*q1*q2) + P[18][3]*(2.0f*q0*q1 + 2.0f*q2*q3) - P[3][3]*(SH_MAG[7] + SH_MAG[8] - 2.0f*magD*q2)) - P[16][20]*(2.0f*q0*q3 - 2.0f*q1*q2) + P[18][20]*(2.0f*q0*q1 + 2.0f*q2*q3) + SH_MAG[2]*(P[20][0] + P[0][0]*SH_MAG[2] + P[1][0]*SH_MAG[1] + P[2][0]*SH_MAG[0] - P[17][0]*(SH_MAG[3] - SH_MAG[4] + SH_MAG[5] - SH_MAG[6]) - P[16][0]*(2.0f*q0*q3 - 2.0f*q1*q2) + P[18][0]*(2.0f*q0*q1 + 2.0f*q2*q3) - P[3][0]*(SH_MAG[7] + SH_MAG[8] - 2.0f*magD*q2)) + SH_MAG[1]*(P[20][1] + P[0][1]*SH_MAG[2] + P[1][1]*SH_MAG[1] + P[2][1]*SH_MAG[0] - P[17][1]*(SH_MAG[3] - SH_MAG[4] + SH_MAG[5] - SH_MAG[6]) - P[16][1]*(2.0f*q0*q3 - 2.0f*q1*q2) + P[18][1]*(2.0f*q0*q1 + 2.0f*q2*q3) - P[3][1]*(SH_MAG[7] + SH_MAG[8] - 2.0f*magD*q2)) + SH_MAG[0]*(P[20][2] + P[0][2]*SH_MAG[2] + P[1][2]*SH_MAG[1] + P[2][2]*SH_MAG[0] - P[17][2]*(SH_MAG[3] - SH_MAG[4] + SH_MAG[5] - SH_MAG[6]) - P[16][2]*(2.0f*q0*q3 - 2.0f*q1*q2) + P[18][2]*(2.0f*q0*q1 + 2.0f*q2*q3) - P[3][2]*(SH_MAG[7] + SH_MAG[8] - 2.0f*magD*q2)) - (SH_MAG[3] - SH_MAG[4] + SH_MAG[5] - SH_MAG[6])*(P[20][17] + P[0][17]*SH_MAG[2] + P[1][17]*SH_MAG[1] + P[2][17]*SH_MAG[0] - P[17][17]*(SH_MAG[3] - SH_MAG[4] + SH_MAG[5] - SH_MAG[6]) - P[16][17]*(2.0f*q0*q3 - 2.0f*q1*q2) + P[18][17]*(2.0f*q0*q1 + 2.0f*q2*q3) - P[3][17]*(SH_MAG[7] + SH_MAG[8] - 2.0f*magD*q2)) - P[3][20]*(SH_MAG[7] + SH_MAG[8] - 2.0f*magD*q2));
-    if (varInnovMag[1] >= R_MAG) {
-        faultStatus.bad_ymag = false;
-    } else {
-        if (frontend->_ukf_use_ut != 0) {
-            forceCovariancePSD(P, sigma_prop, uint8_t(stateIndexLim + 1));
+    for (uint8_t i = 0; i <= 2; i++) {
+        if (ukfComputeUpdate(mag_meas[i], R_MAG, mag_obs[i], kalman_mask, innovMag[i], varInnovMag[i])) {
             return;
         }
-        CovarianceInit();
-        faultStatus.bad_ymag = true;
-        return;
-    }
-
-    // Z axis
-    varInnovMag[2] = (P[21][21] + R_MAG + P[0][21]*SH_MAG[1] - P[1][21]*SH_MAG[2] + P[3][21]*SH_MAG[0] + P[18][21]*(SH_MAG[3] - SH_MAG[4] - SH_MAG[5] + SH_MAG[6]) + (2.0f*q0*q2 + 2.0f*q1*q3)*(P[21][16] + P[0][16]*SH_MAG[1] - P[1][16]*SH_MAG[2] + P[3][16]*SH_MAG[0] + P[18][16]*(SH_MAG[3] - SH_MAG[4] - SH_MAG[5] + SH_MAG[6]) + P[16][16]*(2.0f*q0*q2 + 2.0f*q1*q3) - P[17][16]*(2.0f*q0*q1 - 2.0f*q2*q3) + P[2][16]*(SH_MAG[7] + SH_MAG[8] - 2.0f*magD*q2)) - (2.0f*q0*q1 - 2.0f*q2*q3)*(P[21][17] + P[0][17]*SH_MAG[1] - P[1][17]*SH_MAG[2] + P[3][17]*SH_MAG[0] + P[18][17]*(SH_MAG[3] - SH_MAG[4] - SH_MAG[5] + SH_MAG[6]) + P[16][17]*(2.0f*q0*q2 + 2.0f*q1*q3) - P[17][17]*(2.0f*q0*q1 - 2.0f*q2*q3) + P[2][17]*(SH_MAG[7] + SH_MAG[8] - 2.0f*magD*q2)) + (SH_MAG[7] + SH_MAG[8] - 2.0f*magD*q2)*(P[21][2] + P[0][2]*SH_MAG[1] - P[1][2]*SH_MAG[2] + P[3][2]*SH_MAG[0] + P[18][2]*(SH_MAG[3] - SH_MAG[4] - SH_MAG[5] + SH_MAG[6]) + P[16][2]*(2.0f*q0*q2 + 2.0f*q1*q3) - P[17][2]*(2.0f*q0*q1 - 2.0f*q2*q3) + P[2][2]*(SH_MAG[7] + SH_MAG[8] - 2.0f*magD*q2)) + P[16][21]*(2.0f*q0*q2 + 2.0f*q1*q3) - P[17][21]*(2.0f*q0*q1 - 2.0f*q2*q3) + SH_MAG[1]*(P[21][0] + P[0][0]*SH_MAG[1] - P[1][0]*SH_MAG[2] + P[3][0]*SH_MAG[0] + P[18][0]*(SH_MAG[3] - SH_MAG[4] - SH_MAG[5] + SH_MAG[6]) + P[16][0]*(2.0f*q0*q2 + 2.0f*q1*q3) - P[17][0]*(2.0f*q0*q1 - 2.0f*q2*q3) + P[2][0]*(SH_MAG[7] + SH_MAG[8] - 2.0f*magD*q2)) - SH_MAG[2]*(P[21][1] + P[0][1]*SH_MAG[1] - P[1][1]*SH_MAG[2] + P[3][1]*SH_MAG[0] + P[18][1]*(SH_MAG[3] - SH_MAG[4] - SH_MAG[5] + SH_MAG[6]) + P[16][1]*(2.0f*q0*q2 + 2.0f*q1*q3) - P[17][1]*(2.0f*q0*q1 - 2.0f*q2*q3) + P[2][1]*(SH_MAG[7] + SH_MAG[8] - 2.0f*magD*q2)) + SH_MAG[0]*(P[21][3] + P[0][3]*SH_MAG[1] - P[1][3]*SH_MAG[2] + P[3][3]*SH_MAG[0] + P[18][3]*(SH_MAG[3] - SH_MAG[4] - SH_MAG[5] + SH_MAG[6]) + P[16][3]*(2.0f*q0*q2 + 2.0f*q1*q3) - P[17][3]*(2.0f*q0*q1 - 2.0f*q2*q3) + P[2][3]*(SH_MAG[7] + SH_MAG[8] - 2.0f*magD*q2)) + (SH_MAG[3] - SH_MAG[4] - SH_MAG[5] + SH_MAG[6])*(P[21][18] + P[0][18]*SH_MAG[1] - P[1][18]*SH_MAG[2] + P[3][18]*SH_MAG[0] + P[18][18]*(SH_MAG[3] - SH_MAG[4] - SH_MAG[5] + SH_MAG[6]) + P[16][18]*(2.0f*q0*q2 + 2.0f*q1*q3) - P[17][18]*(2.0f*q0*q1 - 2.0f*q2*q3) + P[2][18]*(SH_MAG[7] + SH_MAG[8] - 2.0f*magD*q2)) + P[2][21]*(SH_MAG[7] + SH_MAG[8] - 2.0f*magD*q2));
-    if (varInnovMag[2] >= R_MAG) {
-        faultStatus.bad_zmag = false;
-    } else {
-        if (frontend->_ukf_use_ut != 0) {
-            forceCovariancePSD(P, sigma_prop, uint8_t(stateIndexLim + 1));
-            return;
-        }
-        CovarianceInit();
-        faultStatus.bad_zmag = true;
-        return;
-    }
-
-    // calculate the innovation test ratios
-    for (uint8_t i = 0; i<=2; i++) {
         magTestRatio[i] = sq(innovMag[i]) / (sq(MAX(0.01f * (ftype)frontend->_magInnovGate, 1.0f)) * varInnovMag[i]);
     }
 
-    // check the last values from all components and set magnetometer health accordingly
     magHealth = (magTestRatio[0] < 1.0f && magTestRatio[1] < 1.0f && magTestRatio[2] < 1.0f);
-
-    // if the magnetometer is unhealthy, do not proceed further
     if (!magHealth) {
         return;
     }
 
-    Vector24 H_MAG;
-    // index of H_MAG which is exactly 1, for more efficient computation below
-    int H_MAG_unit_index;
+    faultStatus.bad_xmag = false;
+    faultStatus.bad_ymag = false;
+    faultStatus.bad_zmag = false;
+
     for (uint8_t obsIndex = 0; obsIndex <= 2; obsIndex++) {
-
-        if (obsIndex == 0) {
-
-            for (uint8_t i = 0; i<=stateIndexLim; i++) H_MAG[i] = 0.0f;
-            H_MAG[0] = SH_MAG[7] + SH_MAG[8] - 2.0f*magD*q2;
-            H_MAG[1] = SH_MAG[0];
-            H_MAG[2] = -SH_MAG[1];
-            H_MAG[3] = SH_MAG[2];
-            H_MAG[16] = SH_MAG[5] - SH_MAG[4] - SH_MAG[3] + SH_MAG[6];
-            H_MAG[17] = 2.0f*q0*q3 + 2.0f*q1*q2;
-            H_MAG[18] = 2.0f*q1*q3 - 2.0f*q0*q2;
-            H_MAG[19] = 1.0f;
-            H_MAG[20] = 0.0f;
-            H_MAG[21] = 0.0f;
-            H_MAG_unit_index = 19;
-
-            // calculate Kalman gain
-            const Vector5 SK_MX {
-                1.0f / varInnovMag[0],
-                SH_MAG[3] + SH_MAG[4] - SH_MAG[5] - SH_MAG[6],
-                SH_MAG[7] + SH_MAG[8] - 2.0f*magD*q2,
-                2.0f*q0*q2 - 2.0f*q1*q3,
-                2.0f*q0*q3 + 2.0f*q1*q2
-            };
-
-            uint32_t kalman_mask = (1<<10)-1; // values to calculate in Kfusion (others are set to zero)
-
-            if (!inhibitDelAngBiasStates) {
-                kalman_mask |= (1<<10) | (1<<11) | (1<<12);
-            }
-
-            if (!inhibitDelVelBiasStates) {
-                for (uint8_t index = 0; index < 3; index++) {
-                    const uint8_t stateIndex = index + 13;
-                    if (!dvelBiasAxisInhibit[index]) {
-                        kalman_mask |= (1<<stateIndex);
-                    }
-                }
-            }
-
-            // zero Kalman gains to inhibit magnetic field state estimation
-            if (!inhibitMagStates) {
-                kalman_mask |= (1<<16) | (1<<17) | (1<<18) | (1<<19) | (1<<20) | (1<<21);
-            }
-
-            // zero Kalman gains to inhibit wind state estimation
-            if (!inhibitWindStates && !treatWindStatesAsTruth) {
-                kalman_mask |= (1<<22) | (1<<23);
-            }
-
-            for (auto i=0; i<24; i++) {
-                ftype res = 0;
-                if (kalman_mask & (1<<i)) {
-                    res = SK_MX[0]*(P[i][19] + P[i][1]*SH_MAG[0] - P[i][2]*SH_MAG[1] + P[i][3]*SH_MAG[2] + P[i][0]*SK_MX[2] - P[i][16]*SK_MX[1] + P[i][17]*SK_MX[4] - P[i][18]*SK_MX[3]);
-                }
-                Kfusion[i] = res;
-            }
-
-            // set flags to indicate to other processes that fusion has been performed and is required on the next frame
-            // this can be used by other fusion processes to avoid fusing on the same frame as this expensive step
-            magFusePerformed = true;
-        } else if (obsIndex == 1) { // Fuse Y axis
-
-            // calculate observation jacobians
-            for (uint8_t i = 0; i<=stateIndexLim; i++) H_MAG[i] = 0.0f;
-            H_MAG[0] = SH_MAG[2];
-            H_MAG[1] = SH_MAG[1];
-            H_MAG[2] = SH_MAG[0];
-            H_MAG[3] = 2.0f*magD*q2 - SH_MAG[8] - SH_MAG[7];
-            H_MAG[16] = 2.0f*q1*q2 - 2.0f*q0*q3;
-            H_MAG[17] = SH_MAG[4] - SH_MAG[3] - SH_MAG[5] + SH_MAG[6];
-            H_MAG[18] = 2.0f*q0*q1 + 2.0f*q2*q3;
-            H_MAG[19] = 0.0f;
-            H_MAG[20] = 1.0f;
-            H_MAG[21] = 0.0f;
-            H_MAG_unit_index = 20;
-
-            // calculate Kalman gain
-            const Vector5 SK_MY {
-                1.0f / varInnovMag[1],
-                SH_MAG[3] - SH_MAG[4] + SH_MAG[5] - SH_MAG[6],
-                SH_MAG[7] + SH_MAG[8] - 2.0f*magD*q2,
-                2.0f*q0*q3 - 2.0f*q1*q2,
-                2.0f*q0*q1 + 2.0f*q2*q3
-            };
-
-            uint32_t kalman_mask = (1<<10)-1; // values to calculate in Kfusion (others are set to zero)
-
-            if (!inhibitDelAngBiasStates) {
-                kalman_mask |= (1<<10) | (1<<11) | (1<<12);
-            }
-
-            if (!inhibitDelVelBiasStates) {
-                for (uint8_t index = 0; index < 3; index++) {
-                    const uint8_t stateIndex = index + 13;
-                    if (!dvelBiasAxisInhibit[index]) {
-                        kalman_mask |= (1<<stateIndex);
-                    }
-                }
-            }
-
-            // zero Kalman gains to inhibit magnetic field state estimation
-            if (!inhibitMagStates) {
-                kalman_mask |= (1<<16) | (1<<17) | (1<<18) | (1<<19) | (1<<20) | (1<<21);
-            }
-
-            // zero Kalman gains to inhibit wind state estimation
-            if (!inhibitWindStates && !treatWindStatesAsTruth) {
-                kalman_mask |= (1<<22) | (1<<23);
-            }
-
-            for (auto i=0; i<24; i++) {
-                ftype res = 0;
-                if (kalman_mask & (1<<i)) {
-                    res = SK_MY[0]*(P[i][20] + P[i][0]*SH_MAG[2] + P[i][1]*SH_MAG[1] + P[i][2]*SH_MAG[0] - P[i][3]*SK_MY[2] - P[i][17]*SK_MY[1] - P[i][16]*SK_MY[3] + P[i][18]*SK_MY[4]);
-                }
-                Kfusion[i] = res;
-            }
-
-            // set flags to indicate to other processes that fusion has been performed and is required on the next frame
-            // this can be used by other fusion processes to avoid fusing on the same frame as this expensive step
-            magFusePerformed = true;
-        }
-        else if (obsIndex == 2) // we are now fusing the Z measurement
-        {
-            // calculate observation jacobians
-            for (uint8_t i = 0; i<=stateIndexLim; i++) H_MAG[i] = 0.0f;
-            H_MAG[0] = SH_MAG[1];
-            H_MAG[1] = -SH_MAG[2];
-            H_MAG[2] = SH_MAG[7] + SH_MAG[8] - 2.0f*magD*q2;
-            H_MAG[3] = SH_MAG[0];
-            H_MAG[16] = 2.0f*q0*q2 + 2.0f*q1*q3;
-            H_MAG[17] = 2.0f*q2*q3 - 2.0f*q0*q1;
-            H_MAG[18] = SH_MAG[3] - SH_MAG[4] - SH_MAG[5] + SH_MAG[6];
-            H_MAG[19] = 0.0f;
-            H_MAG[20] = 0.0f;
-            H_MAG[21] = 1.0f;
-            H_MAG_unit_index = 21;
-
-            // calculate Kalman gain
-            const Vector5 SK_MZ {
-                1.0f / varInnovMag[2],
-                SH_MAG[3] - SH_MAG[4] - SH_MAG[5] + SH_MAG[6],
-                SH_MAG[7] + SH_MAG[8] - 2.0f*magD*q2,
-                2.0f*q0*q1 - 2.0f*q2*q3,
-                2.0f*q0*q2 + 2.0f*q1*q3
-            };
-
-            uint32_t kalman_mask = (1<<10)-1; // values to calculate in Kfusion (others are set to zero)
-
-            if (!inhibitDelAngBiasStates) {
-                kalman_mask |= (1<<10) | (1<<11) | (1<<12);
-            }
-
-            if (!inhibitDelVelBiasStates) {
-                for (uint8_t index = 0; index < 3; index++) {
-                    const uint8_t stateIndex = index + 13;
-                    if (!dvelBiasAxisInhibit[index]) {
-                        kalman_mask |= (1<<stateIndex);
-                    }
-                }
-            }
-
-            // zero Kalman gains to inhibit magnetic field state estimation
-            if (!inhibitMagStates) {
-                kalman_mask |= (1<<16) | (1<<17) | (1<<18) | (1<<19) | (1<<20) | (1<<21);
-            }
-
-            // zero Kalman gains to inhibit wind state estimation
-            if (!inhibitWindStates && !treatWindStatesAsTruth) {
-                kalman_mask |= (1<<22) | (1<<23);
-            }
-
-            for (auto i=0; i<24; i++) {
-                ftype res = 0;
-                if (kalman_mask & (1<<i)) {
-                    res = SK_MZ[0]*(P[i][21] + P[i][0]*SH_MAG[1] - P[i][1]*SH_MAG[2] + P[i][3]*SH_MAG[0] + P[i][2]*SK_MZ[2] + P[i][18]*SK_MZ[1] + P[i][16]*SK_MZ[4] - P[i][17]*SK_MZ[3]);
-                }
-                Kfusion[i] = res;
-            }
-
-            // set flags to indicate to other processes that fusion has been performed and is required on the next frame
-            // this can be used by other fusion processes to avoid fusing on the same frame as this expensive step
-            magFusePerformed = true;
-        }
-        // correct the covariance P = (I - K*H)*P = P - K*H*P. take advantage of
-        // the zero elements of H to reduce the number of operations.
-        for (unsigned i = 0; i<=stateIndexLim; i++) {
-            // j as the inner loop allows the compiler to hoist the KH product
-            // to save computation, and do the inner indexing more efficiently.
-            for (unsigned j = 0; j<=stateIndexLim; j++) {
-                ftype res = 0;
-                res += (Kfusion[i] * H_MAG[0]) * P[0][j];
-                res += (Kfusion[i] * H_MAG[1]) * P[1][j];
-                res += (Kfusion[i] * H_MAG[2]) * P[2][j];
-                res += (Kfusion[i] * H_MAG[3]) * P[3][j];
-                res += (Kfusion[i] * H_MAG[16]) * P[16][j];
-                res += (Kfusion[i] * H_MAG[17]) * P[17][j];
-                res += (Kfusion[i] * H_MAG[18]) * P[18][j];
-                // one value in H is always 1, and the others not mentioned here
-                // are zero, so we can skip that H product to save an operation.
-                res += Kfusion[i] * P[H_MAG_unit_index][j];
-                KHP[i][j] = res;
-            }
-        }
-
-        // finish fusion from KHP and Kfusion
-        if (!FinishFusion(innovMag[obsIndex])) { // no fault?
-            // add table constraint here for faster convergence
-            if (have_table_earth_field && frontend->_mag_ef_limit > 0) {
-                MagTableConstrain();
-            }
-        } else {
-            // FinishFusion refused update (KHP would drive a variance negative).
-            // With UT this is usually indefinite P from scaled-UT numerics — repair
-            // and skip without BAD_*MAG/CovarianceInit so AHRS stays on UKF.
-            if (frontend->_ukf_use_ut != 0) {
-                forceCovariancePSD(P, sigma_prop, uint8_t(stateIndexLim + 1));
-                return;
-            }
-            if (obsIndex == 0) {
-                faultStatus.bad_xmag = true;
-            } else if (obsIndex == 1) {
-                faultStatus.bad_ymag = true;
-            } else if (obsIndex == 2) {
-                faultStatus.bad_zmag = true;
-            }
-            CovarianceInit();
+        magFusePerformed = true;
+        if (FuseScalarUT(mag_meas[obsIndex], R_MAG, mag_obs[obsIndex], kalman_mask,
+                         innovMag[obsIndex], varInnovMag[obsIndex])) {
+            forceCovariancePSD(P, sigma_prop, uint8_t(stateIndexLim + 1));
             return;
+        }
+        if (have_table_earth_field && frontend->_mag_ef_limit > 0) {
+            MagTableConstrain();
         }
     }
 }
 
-/*
- * Fuse direct yaw measurements using explicit algebraic equations auto-generated from
- * derivation/generate_2.py with output recorded in derivation/generated/yaw_generated.cpp
- * Returns true if the fusion was successful
-*/
 bool NavUKF_core::fuseEulerYaw(yawFusionMethod method)
 {
-    const ftype &q0 = stateStruct.quat[0];
-    const ftype &q1 = stateStruct.quat[1];
-    const ftype &q2 = stateStruct.quat[2];
-    const ftype &q3 = stateStruct.quat[3];
-
     ftype gsfYaw, gsfYawVariance;
     if (method == yawFusionMethod::GSF) {
         if (!EKFGSF_getYaw(gsfYaw, gsfYawVariance)) {
@@ -899,211 +586,69 @@ bool NavUKF_core::fuseEulerYaw(yawFusionMethod method)
 #endif
     }
 
-    // calculate observation jacobian, predicted yaw and zero yaw body to earth rotation matrix
+    // Predicted yaw and zero-yaw rotation used to form the yaw measurement
     ftype yawAngPredicted;
-    ftype H_YAW[4];
     Matrix3F Tbn_zeroYaw;
 
     if (order == rotationOrder::TAIT_BRYAN_321) {
-        // calculate 321 yaw observation matrix - option A or B to avoid singularity in derivation at +-90 degrees yaw
-        bool canUseA = false;
-        const ftype SA0 = 2*q3;
-        const ftype SA1 = 2*q2;
-        const ftype SA2 = SA0*q0 + SA1*q1;
-        const ftype SA3 = sq(q0) + sq(q1) - sq(q2) - sq(q3);
-        ftype SA4, SA5_inv;
-        if (is_positive(sq(SA3))) {
-            SA4 = 1.0F/sq(SA3);
-            SA5_inv = sq(SA2)*SA4 + 1;
-            canUseA = is_positive(fabsF(SA5_inv));
-        }
-
-        bool canUseB = false;
-        const ftype SB0 = 2*q0;
-        const ftype SB1 = 2*q1;
-        const ftype SB2 = SB0*q3 + SB1*q2;
-        const ftype SB4 = sq(q0) + sq(q1) - sq(q2) - sq(q3);
-        ftype SB3, SB5_inv;
-        if (is_positive(sq(SB2))) {
-            SB3 = 1.0F/sq(SB2);
-            SB5_inv = SB3*sq(SB4) + 1;
-            canUseB = is_positive(fabsF(SB5_inv));
-        }
-
-        if (canUseA && (!canUseB || fabsF(SA5_inv) >= fabsF(SB5_inv))) {
-            const ftype SA5 = 1.0F/SA5_inv;
-            const ftype SA6 = 1.0F/(SA3);
-            const ftype SA7 = SA2*SA4;
-            const ftype SA8 = 2*SA7;
-            const ftype SA9 = 2*SA6;
-
-            H_YAW[0] = SA5*(SA0*SA6 - SA8*q0);
-            H_YAW[1] = SA5*(SA1*SA6 - SA8*q1);
-            H_YAW[2] = SA5*(SA1*SA7 + SA9*q1);
-            H_YAW[3] = SA5*(SA0*SA7 + SA9*q0);
-        } else if (canUseB && (!canUseA || fabsF(SB5_inv) > fabsF(SA5_inv))) {
-            const ftype SB5 = 1.0F/SB5_inv;
-            const ftype SB6 = 1.0F/(SB2);
-            const ftype SB7 = SB3*SB4;
-            const ftype SB8 = 2*SB7;
-            const ftype SB9 = 2*SB6;
-
-            H_YAW[0] = -SB5*(SB0*SB6 - SB8*q3);
-            H_YAW[1] = -SB5*(SB1*SB6 - SB8*q2);
-            H_YAW[2] = -SB5*(-SB1*SB7 - SB9*q2);
-            H_YAW[3] = -SB5*(-SB0*SB7 - SB9*q3);
-        } else {
-            return false;
-        }
-
-        // Get the 321 euler angles
         Vector3F euler321;
         stateStruct.quat.to_euler(euler321.x, euler321.y, euler321.z);
         yawAngPredicted = euler321.z;
-
-        // set the yaw to zero and calculate the zero yaw rotation from body to earth frame
         Tbn_zeroYaw.from_euler(euler321.x, euler321.y, 0.0f);
-
     } else if (order == rotationOrder::TAIT_BRYAN_312) {
-        // calculate 312 yaw observation matrix - option A or B to avoid singularity in derivation at +-90 degrees yaw
-        bool canUseA = false;
-        const ftype SA0 = 2*q3;
-        const ftype SA1 = 2*q2;
-        const ftype SA2 = SA0*q0 - SA1*q1;
-        const ftype SA3 = sq(q0) - sq(q1) + sq(q2) - sq(q3);
-        ftype SA4, SA5_inv;
-        if (is_positive(sq(SA3))) {
-            SA4 = 1.0F/sq(SA3);
-            SA5_inv = sq(SA2)*SA4 + 1;
-            canUseA = is_positive(fabsF(SA5_inv));
-        }
-
-        bool canUseB = false;
-        const ftype SB0 = 2*q0;
-        const ftype SB1 = 2*q1;
-        const ftype SB2 = -SB0*q3 + SB1*q2;
-        const ftype SB4 = -sq(q0) + sq(q1) - sq(q2) + sq(q3);
-        ftype SB3, SB5_inv;
-        if (is_positive(sq(SB2))) {
-            SB3 = 1.0F/sq(SB2);
-            SB5_inv = SB3*sq(SB4) + 1;
-            canUseB = is_positive(fabsF(SB5_inv));
-        }
-
-        if (canUseA && (!canUseB || fabsF(SA5_inv) >= fabsF(SB5_inv))) {
-            const ftype SA5 = 1.0F/SA5_inv;
-            const ftype SA6 = 1.0F/(SA3);
-            const ftype SA7 = SA2*SA4;
-            const ftype SA8 = 2*SA7;
-            const ftype SA9 = 2*SA6;
-
-            H_YAW[0] = SA5*(SA0*SA6 - SA8*q0);
-            H_YAW[1] = SA5*(-SA1*SA6 + SA8*q1);
-            H_YAW[2] = SA5*(-SA1*SA7 - SA9*q1);
-            H_YAW[3] = SA5*(SA0*SA7 + SA9*q0);
-        } else if (canUseB && (!canUseA || fabsF(SB5_inv) > fabsF(SA5_inv))) {
-            const ftype SB5 = 1.0F/SB5_inv;
-            const ftype SB6 = 1.0F/(SB2);
-            const ftype SB7 = SB3*SB4;
-            const ftype SB8 = 2*SB7;
-            const ftype SB9 = 2*SB6;
-
-            H_YAW[0] = -SB5*(-SB0*SB6 + SB8*q3);
-            H_YAW[1] = -SB5*(SB1*SB6 - SB8*q2);
-            H_YAW[2] = -SB5*(-SB1*SB7 - SB9*q2);
-            H_YAW[3] = -SB5*(SB0*SB7 + SB9*q3);
-        } else {
-            return false;
-        }
-
-        // Get the 312 Tait Bryan rotation angles
         Vector3F euler312 = stateStruct.quat.to_vector312();
         yawAngPredicted = euler312.z;
-
-        // set the yaw to zero and calculate the zero yaw rotation from body to earth frame
         Tbn_zeroYaw.from_euler312(euler312.x, euler312.y, 0.0f);
     } else {
-        // order not supported
         return false;
     }
 
-    // Calculate the innovation
+    ftype yawAngMeasured = yawAngPredicted;
     switch (method) {
     case yawFusionMethod::MAGNETOMETER:
     {
-        // Use the difference between the horizontal projection and declination to give the measured yaw
-        // rotate measured mag components into earth frame
         Vector3F magMeasNED = Tbn_zeroYaw*magDataDelayed.mag;
-        ftype yawAngMeasured = wrap_PI(-atan2F(magMeasNED.y, magMeasNED.x) + MagDeclination());
-        innovYaw = wrap_PI(yawAngPredicted - yawAngMeasured);
+        yawAngMeasured = wrap_PI(-atan2F(magMeasNED.y, magMeasNED.x) + MagDeclination());
         break;
     }
 
     case yawFusionMethod::GPS:
-        innovYaw = wrap_PI(yawAngPredicted - yawAngDataDelayed.yawAng);
+        yawAngMeasured = yawAngDataDelayed.yawAng;
         break;
 
     case yawFusionMethod::STATIC:
-        innovYaw = wrap_PI(yawAngPredicted - yawAngDataStatic.yawAng);
+        yawAngMeasured = yawAngDataStatic.yawAng;
         break;
 
     case yawFusionMethod::GSF:
-        innovYaw = wrap_PI(yawAngPredicted - gsfYaw);
+        yawAngMeasured = gsfYaw;
         break;
 
     case yawFusionMethod::PREDICTED:
     default:
-        innovYaw = 0.0f;
+        yawAngMeasured = yawAngPredicted;
         break;
 
 #if UKF_FEATURE_EXTERNAL_NAV
     case yawFusionMethod::EXTNAV:
-        innovYaw = wrap_PI(yawAngPredicted - extNavYawAngDataDelayed.yawAng);
+        yawAngMeasured = extNavYawAngDataDelayed.yawAng;
         break;
 #endif
     }
 
-    // Calculate innovation variance and Kalman gains, taking advantage of the fact that only the first 4 elements in H are non zero
-    ftype PH[4];
-    ftype varInnov = R_YAW;
-    for (uint8_t rowIndex=0; rowIndex<=3; rowIndex++) {
-        PH[rowIndex] = 0.0f;
-        for (uint8_t colIndex=0; colIndex<=3; colIndex++) {
-            PH[rowIndex] += P[rowIndex][colIndex]*H_YAW[colIndex];
-        }
-        varInnov += H_YAW[rowIndex]*PH[rowIndex];
-    }
-    ftype varInnovInv;
-    if (varInnov >= R_YAW) {
-        varInnovInv = 1.0f / varInnov;
-        // output numerical health status
-        faultStatus.bad_yaw = false;
-    } else {
-        // the calculation is badly conditioned, so we cannot perform fusion on this step
-        // we reset the covariance matrix and try again next measurement
-        CovarianceInit();
-        // output numerical health status
+    const UKFObs yaw_obs = (order == rotationOrder::TAIT_BRYAN_321) ? UKFObs::Yaw321 : UKFObs::Yaw312;
+    const uint32_t kalman_mask = (1u << 24) - 1;
+    ftype varInnov;
+    if (ukfComputeUpdate(yawAngMeasured, R_YAW, yaw_obs, kalman_mask, innovYaw, varInnov, true)) {
         faultStatus.bad_yaw = true;
         return false;
     }
+    faultStatus.bad_yaw = false;
 
-    // calculate Kalman gain
-    for (uint8_t rowIndex=0; rowIndex<=stateIndexLim; rowIndex++) {
-        Kfusion[rowIndex] = 0.0f;
-        for (uint8_t colIndex=0; colIndex<=3; colIndex++) {
-            Kfusion[rowIndex] += P[rowIndex][colIndex]*H_YAW[colIndex];
-        }
-        Kfusion[rowIndex] *= varInnovInv;
-    }
-
-    // calculate the innovation test ratio
     yawTestRatio = sq(innovYaw) / (sq(MAX(0.01f * (ftype)frontend->_yawInnovGate, 1.0f)) * varInnov);
 
-    // Declare the magnetometer unhealthy if the innovation test fails
     if (yawTestRatio > 1.0f) {
         magHealth = false;
-        // On the ground a large innovation could be due to large initial gyro bias or magnetic interference from nearby objects
-        // If we are flying, then it is more likely due to a magnetometer fault and we should not fuse the data
         if (inFlight) {
             return false;
         }
@@ -1111,129 +656,53 @@ bool NavUKF_core::fuseEulerYaw(yawFusionMethod method)
         magHealth = true;
     }
 
-    // correct the covariance P = (I - K*H)*P = P - K*H*P. take advantage of
-    // the zero elements of H to reduce the number of operations.
-    for (unsigned i = 0; i<=stateIndexLim; i++) {
-        // j as the inner loop allows the compiler to hoist the KH product
-        // to save computation, and do the inner indexing more efficiently.
-        for (unsigned j = 0; j<=stateIndexLim; j++) {
-            ftype res = 0;
-            res += (Kfusion[i] * H_YAW[0]) * P[0][j];
-            res += (Kfusion[i] * H_YAW[1]) * P[1][j];
-            res += (Kfusion[i] * H_YAW[2]) * P[2][j];
-            res += (Kfusion[i] * H_YAW[3]) * P[3][j];
-            KHP[i][j] = res;
-        }
-    }
-
     const ftype innovFusion = constrain_ftype(innovYaw, -0.5f, 0.5f);
-    // finish fusion from KHP and Kfusion then record health status
-    faultStatus.bad_yaw = FinishFusion(innovFusion);
+    faultStatus.bad_yaw = ukfApplyUpdate(innovFusion, varInnov);
 
     return true;
 }
 
 /*
- * Fuse declination angle using explicit algebraic equations generated in
- * derivation/generate_2.py with output recorded in derivation/generated/yaw_generated.cpp
+ * Fuse declination angle using an unscented transform.
 */
 void NavUKF_core::FuseDeclination(ftype declErr)
 {
-    // declination error variance (rad^2)
     const ftype R_DECL = sq(declErr);
+    const ftype magN = stateStruct.earth_magfield.x;
+    const ftype magE = stateStruct.earth_magfield.y;
 
-    // copy required states to local variables
-    ftype magN = stateStruct.earth_magfield.x;
-    ftype magE = stateStruct.earth_magfield.y;
-
-    // prevent bad earth field states from causing numerical errors or exceptions
     if (magN < 1e-3f) {
         return;
     }
-
-    // Calculate observation Jacobian and Kalman gains
-    // Calculate intermediate variables
-    const ftype HK0 = sq(magE) + sq(magN);
-    // if the horizontal magnetic field is too small, this calculation will be badly conditioned
-    if (HK0 < 1e-4f) {
-        return;
-    }
-    const ftype HK1 = 1.0F/(HK0);
-    const ftype HK2 = P[16][16]*magE - P[16][17]*magN;
-    const ftype HK3 = P[16][17]*magE - P[17][17]*magN;
-    const ftype HK4_denom = (sq(HK0)*R_DECL + HK2*magE - HK3*magN);
-    ftype HK4;
-    if (fabsF(HK4_denom) > 1e-6f) {
-        HK4 = HK0/HK4_denom;
-    } else {
+    if ((sq(magE) + sq(magN)) < 1e-4f) {
         return;
     }
 
-    // Calculate the observation Jacobian
-    // Note only 2 terms are non-zero which can be used in matrix operations for calculation of Kalman gains and covariance update to significantly reduce cost
-    ftype Hfusion[24] = {};
-    Hfusion[16] = -HK1*magE;
-    Hfusion[17] = HK1*magN;
-
-    uint32_t kalman_mask = (1<<10)-1; // values to calculate in Kfusion (others are set to zero)
-
+    uint32_t kalman_mask = (1<<10)-1;
     if (!inhibitDelAngBiasStates) {
         kalman_mask |= (1<<10) | (1<<11) | (1<<12);
     }
-
     if (!inhibitDelVelBiasStates) {
         for (uint8_t index = 0; index < 3; index++) {
-            const uint8_t stateIndex = index + 13;
             if (!dvelBiasAxisInhibit[index]) {
-                kalman_mask |= (1<<stateIndex);
+                kalman_mask |= (1<<(index + 13));
             }
         }
     }
-
     if (!inhibitMagStates) {
         kalman_mask |= (1<<16) | (1<<17) | (1<<18) | (1<<19) | (1<<20) | (1<<21);
     }
-
     if (!inhibitWindStates && !treatWindStatesAsTruth) {
         kalman_mask |= (1<<22) | (1<<23);
     }
 
-    for (auto i=0; i<24; i++) {
-        ftype res = 0;
-        if (kalman_mask & (1<<i)) {
-            res = -HK4*(P[i][16]*magE-P[i][17]*magN);
-        }
-        Kfusion[i] = res;
+    const ftype magDecAng = MagDeclination();
+    ftype innovation, varInnov;
+    if (ukfComputeUpdate(magDecAng, R_DECL, UKFObs::Declination, kalman_mask, innovation, varInnov, true)) {
+        return;
     }
-
-    // get the magnetic declination
-    ftype magDecAng = MagDeclination();
-
-    // Calculate the innovation
-    ftype innovation = atan2F(magE , magN) - magDecAng;
-
-    // limit the innovation to protect against data errors
-    if (innovation > 0.5f) {
-        innovation = 0.5f;
-    } else if (innovation < -0.5f) {
-        innovation = -0.5f;
-    }
-
-    // correct the covariance P = (I - K*H)*P = P - K*H*P. take advantage of
-    // the zero elements of H to reduce the number of operations.
-    for (unsigned i = 0; i<=stateIndexLim; i++) {
-        // j as the inner loop allows the compiler to hoist the KH product
-        // to save computation, and do the inner indexing more efficiently.
-        for (unsigned j = 0; j<=stateIndexLim; j++) {
-            ftype res = 0;
-            res += (Kfusion[i] * Hfusion[16]) * P[16][j];
-            res += (Kfusion[i] * Hfusion[17]) * P[17][j];
-            KHP[i][j] = res;
-        }
-    }
-
-    // finish fusion from KHP and Kfusion then record health status
-    faultStatus.bad_decl = FinishFusion(innovation);
+    innovation = constrain_ftype(innovation, -0.5f, 0.5f);
+    faultStatus.bad_decl = ukfApplyUpdate(innovation, varInnov);
 }
 
 /********************************************************

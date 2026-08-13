@@ -755,7 +755,6 @@ void NavUKF_core::FuseVelPosNED()
     // declare variables used by state and covariance update calculations
     Vector6 R_OBS; // Measurement variances used for fusion
     Vector6 R_OBS_DATA_CHECKS; // Measurement variances used for data checks only
-    ftype SK;
 
     // perform sequential fusion of measurements. This assumes that the
     // errors in the different velocity and position components are
@@ -1118,10 +1117,6 @@ void NavUKF_core::FuseVelPosNED()
                     }
                 }
 
-                // calculate the Kalman gain and calculate innovation variances
-                varInnovVelPos[obsIndex] = P[stateIndex][stateIndex] + R_OBS[obsIndex];
-                SK = 1.0f/varInnovVelPos[obsIndex];
-
                 uint32_t kalman_mask = (1<<10)-1; // values to calculate in Kfusion (others are set to zero)
 
                 // inhibit delta angle bias state estimation by setting Kalman gains to zero
@@ -1168,32 +1163,14 @@ void NavUKF_core::FuseVelPosNED()
                     kalman_mask |= (1<<22) | (1<<23);
                 }
 
-                for (auto i=0; i<24; i++) {
-                    ftype res = 0;
-                    if (kalman_mask & (1<<i)) {
-                        res = P[i][stateIndex]*SK;
-                    }
-                    Kfusion[i] = res;
+                ut_obs.state_index = stateIndex;
+                const ftype z_meas = statesArray[stateIndex] - innovVelPos[obsIndex];
+                ftype innov_ut, var_ut;
+                bool fault = ukfComputeUpdate(z_meas, R_OBS[obsIndex], UKFObs::State, kalman_mask, innov_ut, var_ut);
+                if (!fault) {
+                    varInnovVelPos[obsIndex] = var_ut;
+                    fault = ukfApplyUpdate(innovVelPos[obsIndex], var_ut);
                 }
-
-                // one element of H is 1, compiler will optimize it away
-                Vector24 Hfusion;
-                Hfusion[stateIndex] = 1;
-
-                // correct the covariance P = (I - K*H)*P = P - K*H*P. take advantage of
-                // the zero elements of H to reduce the number of operations.
-                for (unsigned i = 0; i<=stateIndexLim; i++) {
-                    // j as the inner loop allows the compiler to hoist the KH product
-                    // to save computation, and do the inner indexing more efficiently.
-                    for (unsigned j = 0; j<=stateIndexLim; j++) {
-                        ftype res = 0;
-                        res += (Kfusion[i] * Hfusion[stateIndex]) * P[stateIndex][j];
-                        KHP[i][j] = res;
-                    }
-                }
-
-                // finish fusion from KHP and Kfusion
-                const bool fault = FinishFusion(innovVelPos[obsIndex]);
                 // record health status
                 if (obsIndex == 0) {
                     faultStatus.bad_nvel = fault;
@@ -1455,580 +1432,76 @@ void NavUKF_core::selectHeightForFusion()
 
 #if UKF_FEATURE_BODY_ODOM
 /*
- * Fuse body frame velocity measurements using explicit algebraic equations generated with Matlab symbolic toolbox.
- * The script file used to generate these and other equations in this filter can be found here:
- * https://github.com/PX4/ecl/blob/master/matlab/scripts/Inertial%20Nav%20EKF/GenerateNavFilterEquations.m
+ * Fuse body frame velocity measurements using an unscented transform.
 */
 void NavUKF_core::FuseBodyVel()
 {
-    Vector24 H_VEL;
-    Vector3F bodyVelPred;
+    const UKFObs body_obs[3] = { UKFObs::BodyVelX, UKFObs::BodyVelY, UKFObs::BodyVelZ };
+    ut_obs.pos_offset_body = bodyOdmDataDelayed.body_offset - accelPosOffset;
+    const ftype R_VEL = sq(bodyOdmDataDelayed.velErr);
 
-    // Copy required states to local variable names
-    ftype q0  = stateStruct.quat[0];
-    ftype q1 = stateStruct.quat[1];
-    ftype q2 = stateStruct.quat[2];
-    ftype q3 = stateStruct.quat[3];
-    ftype vn = stateStruct.velocity.x;
-    ftype ve = stateStruct.velocity.y;
-    ftype vd = stateStruct.velocity.z;
+    for (uint8_t obsIndex = 0; obsIndex <= 2; obsIndex++) {
 
-    // Fuse X, Y and Z axis measurements sequentially assuming observation errors are uncorrelated
-    for (uint8_t obsIndex=0; obsIndex<=2; obsIndex++) {
-
-        // calculate relative velocity in sensor frame including the relative motion due to rotation
-        bodyVelPred = (prevTnb * stateStruct.velocity);
-
-        // correct sensor offset body frame position offset relative to IMU
-        Vector3F posOffsetBody = bodyOdmDataDelayed.body_offset - accelPosOffset;
-
-        // correct prediction for relative motion due to rotation
-        // note - % operator overloaded for cross product
-        if (imuDataDelayed.delAngDT > 0.001f) {
-            bodyVelPred += (imuDataDelayed.delAng * (1.0f / imuDataDelayed.delAngDT)) % posOffsetBody;
+        uint32_t kalman_mask = (1u << 24) - 1;
+        if (inhibitDelAngBiasStates) {
+            kalman_mask &= ~((1u << 10) | (1u << 11) | (1u << 12));
+        }
+        if (inhibitDelVelBiasStates || badIMUdata) {
+            kalman_mask &= ~((1u << 13) | (1u << 14) | (1u << 15));
+        } else {
+            for (uint8_t index = 0; index < 3; index++) {
+                if (dvelBiasAxisInhibit[index]) {
+                    kalman_mask &= ~(1u << (index + 13));
+                }
+            }
+        }
+        if (inhibitMagStates) {
+            kalman_mask &= ~((1u << 16) | (1u << 17) | (1u << 18) | (1u << 19) | (1u << 20) | (1u << 21));
+        }
+        if (inhibitWindStates || treatWindStatesAsTruth) {
+            kalman_mask &= ~((1u << 22) | (1u << 23));
         }
 
-        // calculate observation jacobians and Kalman gains
-        if (obsIndex == 0) {
-            // calculate X axis observation Jacobian
-            H_VEL[0] = q2*vd*-2.0f+q3*ve*2.0f+q0*vn*2.0f;
-            H_VEL[1] = q3*vd*2.0f+q2*ve*2.0f+q1*vn*2.0f;
-            H_VEL[2] = q0*vd*-2.0f+q1*ve*2.0f-q2*vn*2.0f;
-            H_VEL[3] = q1*vd*2.0f+q0*ve*2.0f-q3*vn*2.0f;
-            H_VEL[4] = q0*q0+q1*q1-q2*q2-q3*q3;
-            H_VEL[5] = q0*q3*2.0f+q1*q2*2.0f;
-            H_VEL[6] = q0*q2*-2.0f+q1*q3*2.0f;
-            for (uint8_t index = 7; index < 24; index++) {
-                H_VEL[index] = 0.0f;
-            }
-
-            // calculate intermediate expressions for X axis Kalman gains
-            ftype R_VEL = sq(bodyOdmDataDelayed.velErr);
-            ftype t2 = q0*q3*2.0f;
-            ftype t3 = q1*q2*2.0f;
-            ftype t4 = t2+t3;
-            ftype t5 = q0*q0;
-            ftype t6 = q1*q1;
-            ftype t7 = q2*q2;
-            ftype t8 = q3*q3;
-            ftype t9 = t5+t6-t7-t8;
-            ftype t10 = q0*q2*2.0f;
-            ftype t25 = q1*q3*2.0f;
-            ftype t11 = t10-t25;
-            ftype t12 = q3*ve*2.0f;
-            ftype t13 = q0*vn*2.0f;
-            ftype t26 = q2*vd*2.0f;
-            ftype t14 = t12+t13-t26;
-            ftype t15 = q3*vd*2.0f;
-            ftype t16 = q2*ve*2.0f;
-            ftype t17 = q1*vn*2.0f;
-            ftype t18 = t15+t16+t17;
-            ftype t19 = q0*vd*2.0f;
-            ftype t20 = q2*vn*2.0f;
-            ftype t27 = q1*ve*2.0f;
-            ftype t21 = t19+t20-t27;
-            ftype t22 = q1*vd*2.0f;
-            ftype t23 = q0*ve*2.0f;
-            ftype t28 = q3*vn*2.0f;
-            ftype t24 = t22+t23-t28;
-            ftype t29 = P[0][0]*t14;
-            ftype t30 = P[1][1]*t18;
-            ftype t31 = P[4][5]*t9;
-            ftype t32 = P[5][5]*t4;
-            ftype t33 = P[0][5]*t14;
-            ftype t34 = P[1][5]*t18;
-            ftype t35 = P[3][5]*t24;
-            ftype t79 = P[6][5]*t11;
-            ftype t80 = P[2][5]*t21;
-            ftype t36 = t31+t32+t33+t34+t35-t79-t80;
-            ftype t37 = t4*t36;
-            ftype t38 = P[4][6]*t9;
-            ftype t39 = P[5][6]*t4;
-            ftype t40 = P[0][6]*t14;
-            ftype t41 = P[1][6]*t18;
-            ftype t42 = P[3][6]*t24;
-            ftype t81 = P[6][6]*t11;
-            ftype t82 = P[2][6]*t21;
-            ftype t43 = t38+t39+t40+t41+t42-t81-t82;
-            ftype t44 = P[4][0]*t9;
-            ftype t45 = P[5][0]*t4;
-            ftype t46 = P[1][0]*t18;
-            ftype t47 = P[3][0]*t24;
-            ftype t84 = P[6][0]*t11;
-            ftype t85 = P[2][0]*t21;
-            ftype t48 = t29+t44+t45+t46+t47-t84-t85;
-            ftype t49 = t14*t48;
-            ftype t50 = P[4][1]*t9;
-            ftype t51 = P[5][1]*t4;
-            ftype t52 = P[0][1]*t14;
-            ftype t53 = P[3][1]*t24;
-            ftype t86 = P[6][1]*t11;
-            ftype t87 = P[2][1]*t21;
-            ftype t54 = t30+t50+t51+t52+t53-t86-t87;
-            ftype t55 = t18*t54;
-            ftype t56 = P[4][2]*t9;
-            ftype t57 = P[5][2]*t4;
-            ftype t58 = P[0][2]*t14;
-            ftype t59 = P[1][2]*t18;
-            ftype t60 = P[3][2]*t24;
-            ftype t78 = P[2][2]*t21;
-            ftype t88 = P[6][2]*t11;
-            ftype t61 = t56+t57+t58+t59+t60-t78-t88;
-            ftype t62 = P[4][3]*t9;
-            ftype t63 = P[5][3]*t4;
-            ftype t64 = P[0][3]*t14;
-            ftype t65 = P[1][3]*t18;
-            ftype t66 = P[3][3]*t24;
-            ftype t90 = P[6][3]*t11;
-            ftype t91 = P[2][3]*t21;
-            ftype t67 = t62+t63+t64+t65+t66-t90-t91;
-            ftype t68 = t24*t67;
-            ftype t69 = P[4][4]*t9;
-            ftype t70 = P[5][4]*t4;
-            ftype t71 = P[0][4]*t14;
-            ftype t72 = P[1][4]*t18;
-            ftype t73 = P[3][4]*t24;
-            ftype t92 = P[6][4]*t11;
-            ftype t93 = P[2][4]*t21;
-            ftype t74 = t69+t70+t71+t72+t73-t92-t93;
-            ftype t75 = t9*t74;
-            ftype t83 = t11*t43;
-            ftype t89 = t21*t61;
-            ftype t76 = R_VEL+t37+t49+t55+t68+t75-t83-t89;
-            ftype t77;
-
-            // calculate innovation variance for X axis observation and protect against a badly conditioned calculation
-            if (t76 > R_VEL) {
-                t77 = 1.0f/t76;
-                faultStatus.bad_xvel = false;
-            } else {
-                t76 = R_VEL;
-                t77 = 1.0f/R_VEL;
+        const ftype z_meas = bodyOdmDataDelayed.vel[obsIndex];
+        if (ukfComputeUpdate(z_meas, R_VEL, body_obs[obsIndex], kalman_mask,
+                             innovBodyVel[obsIndex], varInnovBodyVel[obsIndex])) {
+            if (obsIndex == 0) {
                 faultStatus.bad_xvel = true;
-                return;
-            }
-            varInnovBodyVel[0] = t76;
-
-            // calculate innovation for X axis observation
-            innovBodyVel[0] = bodyVelPred.x - bodyOdmDataDelayed.vel.x;
-
-            // calculate Kalman gains for X-axis observation
-            Kfusion[0] = t77*(t29+P[0][5]*t4+P[0][4]*t9-P[0][6]*t11+P[0][1]*t18-P[0][2]*t21+P[0][3]*t24);
-            Kfusion[1] = t77*(t30+P[1][5]*t4+P[1][4]*t9+P[1][0]*t14-P[1][6]*t11-P[1][2]*t21+P[1][3]*t24);
-            Kfusion[2] = t77*(-t78+P[2][5]*t4+P[2][4]*t9+P[2][0]*t14-P[2][6]*t11+P[2][1]*t18+P[2][3]*t24);
-            Kfusion[3] = t77*(t66+P[3][5]*t4+P[3][4]*t9+P[3][0]*t14-P[3][6]*t11+P[3][1]*t18-P[3][2]*t21);
-            Kfusion[4] = t77*(t69+P[4][5]*t4+P[4][0]*t14-P[4][6]*t11+P[4][1]*t18-P[4][2]*t21+P[4][3]*t24);
-            Kfusion[5] = t77*(t32+P[5][4]*t9+P[5][0]*t14-P[5][6]*t11+P[5][1]*t18-P[5][2]*t21+P[5][3]*t24);
-            Kfusion[6] = t77*(-t81+P[6][5]*t4+P[6][4]*t9+P[6][0]*t14+P[6][1]*t18-P[6][2]*t21+P[6][3]*t24);
-
-            // values to calculate in Kfusion (others are set to zero, indices 0-6 ignored)
-            uint32_t kalman_mask = (1<<7) | (1<<8) | (1<<9);
-
-            if (!inhibitDelAngBiasStates) {
-                kalman_mask |= (1<<10) | (1<<11) | (1<<12);
-            }
-
-            if (!inhibitDelVelBiasStates && !badIMUdata) {
-                for (uint8_t index = 0; index < 3; index++) {
-                    const uint8_t stateIndex = index + 13;
-                    if (!dvelBiasAxisInhibit[index]) {
-                        kalman_mask |= (1<<stateIndex);
-                    }
-                }
-            }
-
-            if (!inhibitMagStates) {
-                kalman_mask |= (1<<16) | (1<<17) | (1<<18) | (1<<19) | (1<<20) | (1<<21);
-            }
-
-            if (!inhibitWindStates && !treatWindStatesAsTruth) {
-                kalman_mask |= (1<<22) | (1<<23);
-            }
-
-            for (auto i=7; i<24; i++) { // 0-6 are already computed
-                ftype res = 0;
-                if (kalman_mask & (1<<i)) {
-                    res = t77*(P[i][5]*t4+P[i][4]*t9+P[i][0]*t14-P[i][6]*t11+P[i][1]*t18-P[i][2]*t21+P[i][3]*t24);
-                }
-                Kfusion[i] = res;
-            }
-        } else if (obsIndex == 1) {
-            // calculate Y axis observation Jacobian
-            H_VEL[0] = q1*vd*2.0f+q0*ve*2.0f-q3*vn*2.0f;
-            H_VEL[1] = q0*vd*2.0f-q1*ve*2.0f+q2*vn*2.0f;
-            H_VEL[2] = q3*vd*2.0f+q2*ve*2.0f+q1*vn*2.0f;
-            H_VEL[3] = q2*vd*2.0f-q3*ve*2.0f-q0*vn*2.0f;
-            H_VEL[4] = q0*q3*-2.0f+q1*q2*2.0f;
-            H_VEL[5] = q0*q0-q1*q1+q2*q2-q3*q3;
-            H_VEL[6] = q0*q1*2.0f+q2*q3*2.0f;
-            for (uint8_t index = 7; index < 24; index++) {
-                H_VEL[index] = 0.0f;
-            }
-
-            // calculate intermediate expressions for Y axis Kalman gains
-            ftype R_VEL = sq(bodyOdmDataDelayed.velErr);
-            ftype t2 = q0*q3*2.0f;
-            ftype t9 = q1*q2*2.0f;
-            ftype t3 = t2-t9;
-            ftype t4 = q0*q0;
-            ftype t5 = q1*q1;
-            ftype t6 = q2*q2;
-            ftype t7 = q3*q3;
-            ftype t8 = t4-t5+t6-t7;
-            ftype t10 = q0*q1*2.0f;
-            ftype t11 = q2*q3*2.0f;
-            ftype t12 = t10+t11;
-            ftype t13 = q1*vd*2.0f;
-            ftype t14 = q0*ve*2.0f;
-            ftype t26 = q3*vn*2.0f;
-            ftype t15 = t13+t14-t26;
-            ftype t16 = q0*vd*2.0f;
-            ftype t17 = q2*vn*2.0f;
-            ftype t27 = q1*ve*2.0f;
-            ftype t18 = t16+t17-t27;
-            ftype t19 = q3*vd*2.0f;
-            ftype t20 = q2*ve*2.0f;
-            ftype t21 = q1*vn*2.0f;
-            ftype t22 = t19+t20+t21;
-            ftype t23 = q3*ve*2.0f;
-            ftype t24 = q0*vn*2.0f;
-            ftype t28 = q2*vd*2.0f;
-            ftype t25 = t23+t24-t28;
-            ftype t29 = P[0][0]*t15;
-            ftype t30 = P[1][1]*t18;
-            ftype t31 = P[5][4]*t8;
-            ftype t32 = P[6][4]*t12;
-            ftype t33 = P[0][4]*t15;
-            ftype t34 = P[1][4]*t18;
-            ftype t35 = P[2][4]*t22;
-            ftype t78 = P[4][4]*t3;
-            ftype t79 = P[3][4]*t25;
-            ftype t36 = t31+t32+t33+t34+t35-t78-t79;
-            ftype t37 = P[5][6]*t8;
-            ftype t38 = P[6][6]*t12;
-            ftype t39 = P[0][6]*t15;
-            ftype t40 = P[1][6]*t18;
-            ftype t41 = P[2][6]*t22;
-            ftype t81 = P[4][6]*t3;
-            ftype t82 = P[3][6]*t25;
-            ftype t42 = t37+t38+t39+t40+t41-t81-t82;
-            ftype t43 = t12*t42;
-            ftype t44 = P[5][0]*t8;
-            ftype t45 = P[6][0]*t12;
-            ftype t46 = P[1][0]*t18;
-            ftype t47 = P[2][0]*t22;
-            ftype t83 = P[4][0]*t3;
-            ftype t84 = P[3][0]*t25;
-            ftype t48 = t29+t44+t45+t46+t47-t83-t84;
-            ftype t49 = t15*t48;
-            ftype t50 = P[5][1]*t8;
-            ftype t51 = P[6][1]*t12;
-            ftype t52 = P[0][1]*t15;
-            ftype t53 = P[2][1]*t22;
-            ftype t85 = P[4][1]*t3;
-            ftype t86 = P[3][1]*t25;
-            ftype t54 = t30+t50+t51+t52+t53-t85-t86;
-            ftype t55 = t18*t54;
-            ftype t56 = P[5][2]*t8;
-            ftype t57 = P[6][2]*t12;
-            ftype t58 = P[0][2]*t15;
-            ftype t59 = P[1][2]*t18;
-            ftype t60 = P[2][2]*t22;
-            ftype t87 = P[4][2]*t3;
-            ftype t88 = P[3][2]*t25;
-            ftype t61 = t56+t57+t58+t59+t60-t87-t88;
-            ftype t62 = t22*t61;
-            ftype t63 = P[5][3]*t8;
-            ftype t64 = P[6][3]*t12;
-            ftype t65 = P[0][3]*t15;
-            ftype t66 = P[1][3]*t18;
-            ftype t67 = P[2][3]*t22;
-            ftype t89 = P[4][3]*t3;
-            ftype t90 = P[3][3]*t25;
-            ftype t68 = t63+t64+t65+t66+t67-t89-t90;
-            ftype t69 = P[5][5]*t8;
-            ftype t70 = P[6][5]*t12;
-            ftype t71 = P[0][5]*t15;
-            ftype t72 = P[1][5]*t18;
-            ftype t73 = P[2][5]*t22;
-            ftype t92 = P[4][5]*t3;
-            ftype t93 = P[3][5]*t25;
-            ftype t74 = t69+t70+t71+t72+t73-t92-t93;
-            ftype t75 = t8*t74;
-            ftype t80 = t3*t36;
-            ftype t91 = t25*t68;
-            ftype t76 = R_VEL+t43+t49+t55+t62+t75-t80-t91;
-            ftype t77;
-
-            // calculate innovation variance for Y axis observation and protect against a badly conditioned calculation
-            if (t76 > R_VEL) {
-                t77 = 1.0f/t76;
-                faultStatus.bad_yvel = false;
-            } else {
-                t76 = R_VEL;
-                t77 = 1.0f/R_VEL;
+            } else if (obsIndex == 1) {
                 faultStatus.bad_yvel = true;
-                return;
-            }
-            varInnovBodyVel[1] = t76;
-
-            // calculate innovation for Y axis observation
-            innovBodyVel[1] = bodyVelPred.y - bodyOdmDataDelayed.vel.y;
-
-            // calculate Kalman gains for Y-axis observation
-            Kfusion[0] = t77*(t29-P[0][4]*t3+P[0][5]*t8+P[0][6]*t12+P[0][1]*t18+P[0][2]*t22-P[0][3]*t25);
-            Kfusion[1] = t77*(t30-P[1][4]*t3+P[1][5]*t8+P[1][0]*t15+P[1][6]*t12+P[1][2]*t22-P[1][3]*t25);
-            Kfusion[2] = t77*(t60-P[2][4]*t3+P[2][5]*t8+P[2][0]*t15+P[2][6]*t12+P[2][1]*t18-P[2][3]*t25);
-            Kfusion[3] = t77*(-t90-P[3][4]*t3+P[3][5]*t8+P[3][0]*t15+P[3][6]*t12+P[3][1]*t18+P[3][2]*t22);
-            Kfusion[4] = t77*(-t78+P[4][5]*t8+P[4][0]*t15+P[4][6]*t12+P[4][1]*t18+P[4][2]*t22-P[4][3]*t25);
-            Kfusion[5] = t77*(t69-P[5][4]*t3+P[5][0]*t15+P[5][6]*t12+P[5][1]*t18+P[5][2]*t22-P[5][3]*t25);
-            Kfusion[6] = t77*(t38-P[6][4]*t3+P[6][5]*t8+P[6][0]*t15+P[6][1]*t18+P[6][2]*t22-P[6][3]*t25);
-
-            // values to calculate in Kfusion (others are set to zero, indices 0-6 ignored)
-            uint32_t kalman_mask = (1<<7) | (1<<8) | (1<<9);
-
-            if (!inhibitDelAngBiasStates) {
-                kalman_mask |= (1<<10) | (1<<11) | (1<<12);
-            }
-
-            if (!inhibitDelVelBiasStates && !badIMUdata) {
-                for (uint8_t index = 0; index < 3; index++) {
-                    const uint8_t stateIndex = index + 13;
-                    if (!dvelBiasAxisInhibit[index]) {
-                        kalman_mask |= (1<<stateIndex);
-                    }
-                }
-            }
-
-            if (!inhibitMagStates) {
-                kalman_mask |= (1<<16) | (1<<17) | (1<<18) | (1<<19) | (1<<20) | (1<<21);
-            }
-
-            if (!inhibitWindStates && !treatWindStatesAsTruth) {
-                kalman_mask |= (1<<22) | (1<<23);
-            }
-
-            for (auto i=7; i<24; i++) { // 0-6 are already computed
-                ftype res = 0;
-                if (kalman_mask & (1<<i)) {
-                    res = t77*(-P[i][4]*t3+P[i][5]*t8+P[i][0]*t15+P[i][6]*t12+P[i][1]*t18+P[i][2]*t22-P[i][3]*t25);
-                }
-                Kfusion[i] = res;
-            }
-        } else if (obsIndex == 2) {
-            // calculate Z axis observation Jacobian
-            H_VEL[0] = q0*vd*2.0f-q1*ve*2.0f+q2*vn*2.0f;
-            H_VEL[1] = q1*vd*-2.0f-q0*ve*2.0f+q3*vn*2.0f;
-            H_VEL[2] = q2*vd*-2.0f+q3*ve*2.0f+q0*vn*2.0f;
-            H_VEL[3] = q3*vd*2.0f+q2*ve*2.0f+q1*vn*2.0f;
-            H_VEL[4] = q0*q2*2.0f+q1*q3*2.0f;
-            H_VEL[5] = q0*q1*-2.0f+q2*q3*2.0f;
-            H_VEL[6] = q0*q0-q1*q1-q2*q2+q3*q3;
-            for (uint8_t index = 7; index < 24; index++) {
-                H_VEL[index] = 0.0f;
-            }
-
-            // calculate intermediate expressions for Z axis Kalman gains
-            ftype R_VEL = sq(bodyOdmDataDelayed.velErr);
-            ftype t2 = q0*q2*2.0f;
-            ftype t3 = q1*q3*2.0f;
-            ftype t4 = t2+t3;
-            ftype t5 = q0*q0;
-            ftype t6 = q1*q1;
-            ftype t7 = q2*q2;
-            ftype t8 = q3*q3;
-            ftype t9 = t5-t6-t7+t8;
-            ftype t10 = q0*q1*2.0f;
-            ftype t25 = q2*q3*2.0f;
-            ftype t11 = t10-t25;
-            ftype t12 = q0*vd*2.0f;
-            ftype t13 = q2*vn*2.0f;
-            ftype t26 = q1*ve*2.0f;
-            ftype t14 = t12+t13-t26;
-            ftype t15 = q1*vd*2.0f;
-            ftype t16 = q0*ve*2.0f;
-            ftype t27 = q3*vn*2.0f;
-            ftype t17 = t15+t16-t27;
-            ftype t18 = q3*ve*2.0f;
-            ftype t19 = q0*vn*2.0f;
-            ftype t28 = q2*vd*2.0f;
-            ftype t20 = t18+t19-t28;
-            ftype t21 = q3*vd*2.0f;
-            ftype t22 = q2*ve*2.0f;
-            ftype t23 = q1*vn*2.0f;
-            ftype t24 = t21+t22+t23;
-            ftype t29 = P[0][0]*t14;
-            ftype t30 = P[6][4]*t9;
-            ftype t31 = P[4][4]*t4;
-            ftype t32 = P[0][4]*t14;
-            ftype t33 = P[2][4]*t20;
-            ftype t34 = P[3][4]*t24;
-            ftype t78 = P[5][4]*t11;
-            ftype t79 = P[1][4]*t17;
-            ftype t35 = t30+t31+t32+t33+t34-t78-t79;
-            ftype t36 = t4*t35;
-            ftype t37 = P[6][5]*t9;
-            ftype t38 = P[4][5]*t4;
-            ftype t39 = P[0][5]*t14;
-            ftype t40 = P[2][5]*t20;
-            ftype t41 = P[3][5]*t24;
-            ftype t80 = P[5][5]*t11;
-            ftype t81 = P[1][5]*t17;
-            ftype t42 = t37+t38+t39+t40+t41-t80-t81;
-            ftype t43 = P[6][0]*t9;
-            ftype t44 = P[4][0]*t4;
-            ftype t45 = P[2][0]*t20;
-            ftype t46 = P[3][0]*t24;
-            ftype t83 = P[5][0]*t11;
-            ftype t84 = P[1][0]*t17;
-            ftype t47 = t29+t43+t44+t45+t46-t83-t84;
-            ftype t48 = t14*t47;
-            ftype t49 = P[6][1]*t9;
-            ftype t50 = P[4][1]*t4;
-            ftype t51 = P[0][1]*t14;
-            ftype t52 = P[2][1]*t20;
-            ftype t53 = P[3][1]*t24;
-            ftype t85 = P[5][1]*t11;
-            ftype t86 = P[1][1]*t17;
-            ftype t54 = t49+t50+t51+t52+t53-t85-t86;
-            ftype t55 = P[6][2]*t9;
-            ftype t56 = P[4][2]*t4;
-            ftype t57 = P[0][2]*t14;
-            ftype t58 = P[2][2]*t20;
-            ftype t59 = P[3][2]*t24;
-            ftype t88 = P[5][2]*t11;
-            ftype t89 = P[1][2]*t17;
-            ftype t60 = t55+t56+t57+t58+t59-t88-t89;
-            ftype t61 = t20*t60;
-            ftype t62 = P[6][3]*t9;
-            ftype t63 = P[4][3]*t4;
-            ftype t64 = P[0][3]*t14;
-            ftype t65 = P[2][3]*t20;
-            ftype t66 = P[3][3]*t24;
-            ftype t90 = P[5][3]*t11;
-            ftype t91 = P[1][3]*t17;
-            ftype t67 = t62+t63+t64+t65+t66-t90-t91;
-            ftype t68 = t24*t67;
-            ftype t69 = P[6][6]*t9;
-            ftype t70 = P[4][6]*t4;
-            ftype t71 = P[0][6]*t14;
-            ftype t72 = P[2][6]*t20;
-            ftype t73 = P[3][6]*t24;
-            ftype t92 = P[5][6]*t11;
-            ftype t93 = P[1][6]*t17;
-            ftype t74 = t69+t70+t71+t72+t73-t92-t93;
-            ftype t75 = t9*t74;
-            ftype t82 = t11*t42;
-            ftype t87 = t17*t54;
-            ftype t76 = R_VEL+t36+t48+t61+t68+t75-t82-t87;
-            ftype t77;
-
-            // calculate innovation variance for Z axis observation and protect against a badly conditioned calculation
-            if (t76 > R_VEL) {
-                t77 = 1.0f/t76;
-                faultStatus.bad_zvel = false;
             } else {
-                t76 = R_VEL;
-                t77 = 1.0f/R_VEL;
                 faultStatus.bad_zvel = true;
-                return;
             }
-            varInnovBodyVel[2] = t76;
-
-            // calculate innovation for Z axis observation
-            innovBodyVel[2] = bodyVelPred.z - bodyOdmDataDelayed.vel.z;
-
-            // calculate Kalman gains for Z-axis observation
-            Kfusion[0] = t77*(t29+P[0][4]*t4+P[0][6]*t9-P[0][5]*t11-P[0][1]*t17+P[0][2]*t20+P[0][3]*t24);
-            Kfusion[1] = t77*(P[1][4]*t4+P[1][0]*t14+P[1][6]*t9-P[1][5]*t11-P[1][1]*t17+P[1][2]*t20+P[1][3]*t24);
-            Kfusion[2] = t77*(t58+P[2][4]*t4+P[2][0]*t14+P[2][6]*t9-P[2][5]*t11-P[2][1]*t17+P[2][3]*t24);
-            Kfusion[3] = t77*(t66+P[3][4]*t4+P[3][0]*t14+P[3][6]*t9-P[3][5]*t11-P[3][1]*t17+P[3][2]*t20);
-            Kfusion[4] = t77*(t31+P[4][0]*t14+P[4][6]*t9-P[4][5]*t11-P[4][1]*t17+P[4][2]*t20+P[4][3]*t24);
-            Kfusion[5] = t77*(-t80+P[5][4]*t4+P[5][0]*t14+P[5][6]*t9-P[5][1]*t17+P[5][2]*t20+P[5][3]*t24);
-            Kfusion[6] = t77*(t69+P[6][4]*t4+P[6][0]*t14-P[6][5]*t11-P[6][1]*t17+P[6][2]*t20+P[6][3]*t24);
-
-            // values to calculate in Kfusion (others are set to zero, indices 0-6 ignored)
-            uint32_t kalman_mask = (1<<7) | (1<<8) | (1<<9);
-
-            if (!inhibitDelAngBiasStates) {
-                kalman_mask |= (1<<10) | (1<<11) | (1<<12);
-            }
-
-            if (!inhibitDelVelBiasStates && !badIMUdata) {
-                for (uint8_t index = 0; index < 3; index++) {
-                    const uint8_t stateIndex = index + 13;
-                    if (!dvelBiasAxisInhibit[index]) {
-                        kalman_mask |= (1<<stateIndex);
-                    }
-                }
-            }
-
-            if (!inhibitMagStates) {
-                kalman_mask |= (1<<16) | (1<<17) | (1<<18) | (1<<19) | (1<<20) | (1<<21);
-            }
-
-            if (!inhibitWindStates && !treatWindStatesAsTruth) {
-                kalman_mask |= (1<<22) | (1<<23);
-            }
-
-            for (auto i=7; i<24; i++) { // 0-6 are already computed
-                ftype res = 0;
-                if (kalman_mask & (1<<i)) {
-                    res = t77*(P[i][4]*t4+P[i][0]*t14+P[i][6]*t9-P[i][5]*t11-P[i][1]*t17+P[i][2]*t20+P[i][3]*t24);
-                }
-                Kfusion[i] = res;
-            }
-        } else {
             return;
         }
+        if (obsIndex == 0) {
+            faultStatus.bad_xvel = false;
+        } else if (obsIndex == 1) {
+            faultStatus.bad_yvel = false;
+        } else {
+            faultStatus.bad_zvel = false;
+        }
 
-        // calculate the innovation consistency test ratio
-        // TODO add tuning parameter for gate
         bodyVelTestRatio[obsIndex] = sq(innovBodyVel[obsIndex]) / (sq(5.0f) * varInnovBodyVel[obsIndex]);
-
-        // Check the innovation for consistency and don't fuse if out of bounds
-        // TODO also apply angular velocity magnitude check
-        if ((bodyVelTestRatio[obsIndex]) < 1.0f) {
-            // record the last time observations were accepted for fusion
+        if (bodyVelTestRatio[obsIndex] < 1.0f) {
             prevBodyVelFuseTime_ms = imuSampleTime_ms;
-            // notify first time only
             if (!bodyVelFusionActive) {
                 bodyVelFusionActive = true;
                 GCS_SEND_TEXT(MAV_SEVERITY_INFO, "UKF IMU%u fusing odometry",(unsigned)imu_index);
             }
-
-            // correct the covariance P = (I - K*H)*P = P - K*H*P. take advantage of
-            // the zero elements of H to reduce the number of operations.
-            for (unsigned i = 0; i<=stateIndexLim; i++) {
-                // j as the inner loop allows the compiler to hoist the KH product
-                // to save computation, and do the inner indexing more efficiently.
-                for (unsigned j = 0; j<=stateIndexLim; j++) {
-                    ftype res = 0;
-                    res += (Kfusion[i] * H_VEL[0]) * P[0][j];
-                    res += (Kfusion[i] * H_VEL[1]) * P[1][j];
-                    res += (Kfusion[i] * H_VEL[2]) * P[2][j];
-                    res += (Kfusion[i] * H_VEL[3]) * P[3][j];
-                    res += (Kfusion[i] * H_VEL[4]) * P[4][j];
-                    res += (Kfusion[i] * H_VEL[5]) * P[5][j];
-                    res += (Kfusion[i] * H_VEL[6]) * P[6][j];
-                    KHP[i][j] = res;
-                }
-            }
-
-            // finish fusion from KHP and Kfusion
-            if (FinishFusion(innovBodyVel[obsIndex])) {
-                // fault, record bad axis
+            if (ukfApplyUpdate(innovBodyVel[obsIndex], varInnovBodyVel[obsIndex])) {
                 if (obsIndex == 0) {
                     faultStatus.bad_xvel = true;
                 } else if (obsIndex == 1) {
                     faultStatus.bad_yvel = true;
-                } else if (obsIndex == 2) {
+                } else {
                     faultStatus.bad_zvel = true;
                 }
             }
         }
     }
 }
+
 #endif // UKF_FEATURE_BODY_ODOM
 
 #if UKF_FEATURE_BODY_ODOM
