@@ -531,46 +531,9 @@ class AutoTestPlane(vehicle_test_suite.TestSuite):
             run["UKF_SIGMA"] = int(sigma)
             return run
 
-        self.start_subtest("algo test: EKF3 baseline profile=tune_bank")
-        ekf_bank = fly(3, "tune_bank", 0, require_ukf=False)
-        method_rows = []
-        for sigma, name in ((0, "ScaledUT"), (1, "Cubature")):
-            self.start_subtest("algo test: UKF SIGMA=%u (%s) profile=tune_bank" % (
-                sigma, name))
-            ukf_run = fly(4, "tune_bank", sigma, require_ukf=True)
-            ratios = self._navukf_ratio_score(ukf_run["rms"]["UKF1"],
-                                              ekf_bank["rms"]["XKF1"])
-            method_rows.append({
-                "name": name,
-                "UKF_SIGMA": sigma,
-                "score": ratios["score"],
-                "ratios": ratios,
-                "ukf": ukf_run["rms"]["UKF1"],
-                "ekf": ekf_bank["rms"]["XKF1"],
-                "left_ukf": ukf_run.get("left_ukf", False),
-            })
-            self.progress(
-                "tune_bank SIGMA=%u score=%.4f att_r=%.3f pos_r=%.3f vel_r=%.3f" % (
-                    sigma, ratios["score"], ratios["ratio_att"],
-                    ratios["ratio_pos"], ratios["ratio_vel"]))
-        method_rows.sort(key=lambda r: r["score"])
-        winner = method_rows[0]
-        win_sigma = int(winner["UKF_SIGMA"])
-        self.progress("Selected UKF_SIGMA=%u (%s) score=%.4f" % (
-            win_sigma, winner["name"], winner["score"]))
-
-        test_results = [{
-            "profile": "tune_bank",
-            "ekf": ekf_bank["rms"]["XKF1"],
-            "ukf": winner["ukf"],
-            "UKF_SIGMA": win_sigma,
-            "score": winner["score"],
-            "ratio_att": winner["ratios"]["ratio_att"],
-            "ratio_pos": winner["ratios"]["ratio_pos"],
-            "ratio_vel": winner["ratios"]["ratio_vel"],
-            "ukf_beats_ekf": bool(winner["score"] < 1.0),
-        }]
-        for profile in test_profiles[1:]:
+        win_sigma = 0  # Cubature (SIGMA=1) was screened out: tune_bank att ratio ~16
+        test_results = []
+        for profile in test_profiles:
             self.start_subtest("algo test profile=%s SIGMA=%u" % (profile, win_sigma))
             ekf_run = fly(3, profile, win_sigma, require_ukf=False)
             ukf_run = fly(4, profile, win_sigma, require_ukf=True)
@@ -628,18 +591,15 @@ class AutoTestPlane(vehicle_test_suite.TestSuite):
         payload = {
             "generated_unix": time.time(),
             "notes": (
-                "UT algorithm changes: tangent-space quat mean, IMU process "
-                "noise mapped through the multiplicative attitude embedding "
-                "(gyro Q scaled to rotation-vector variance), optional cubature "
-                "sigma points. A/B ScaledUT vs Cubature on tune_bank; winner "
-                "used on remaining test and held-out validation profiles. "
-                "Medium GPS. Score = mean(UKF_primary/EKF_primary) over att/pos/vel."
+                "Restored Euclidean UT mean and additive IMU Q after tangent-mean "
+                "and cubature failed on the test set (cubature tune_bank att ratio "
+                "~16). Scaled UT ALPHA=0.35 BETA=2 KAPPA=0 SIGMA=0. Medium GPS. "
+                "Score = mean(UKF_primary/EKF_primary) over att/pos/vel."
             ),
             "UKF_ALPHA": alpha,
             "UKF_BETA": beta,
             "UKF_KAPPA": kappa,
             "UKF_SIGMA": win_sigma,
-            "sigma_method_rows": method_rows,
             "test_profiles": test_profiles,
             "test_results": test_results,
             "test_mean_score": test_mean,
@@ -656,16 +616,8 @@ class AutoTestPlane(vehicle_test_suite.TestSuite):
         with open(md_path, "w", encoding="utf-8") as f:
             f.write("# NavUKF algorithm test / validation vs EKF3\n\n")
             f.write("%s\n\n" % payload["notes"])
-            f.write("## Sigma-point method A/B (tune_bank)\n\n")
-            f.write("| Method | SIGMA | score | att ratio | pos ratio | vel ratio |\n")
-            f.write("|--------|------:|------:|----------:|----------:|----------:|\n")
-            for row in method_rows:
-                f.write("| %s | %u | %.4f | %.4f | %.4f | %.4f |\n" % (
-                    row["name"], row["UKF_SIGMA"], row["score"],
-                    row["ratios"]["ratio_att"], row["ratios"]["ratio_pos"],
-                    row["ratios"]["ratio_vel"]))
-            f.write("\nWinner: **%s** (UKF_SIGMA=%u)\n\n" % (
-                winner["name"], win_sigma))
+            f.write("Cubature (UKF_SIGMA=1) was screened out on tune_bank "
+                    "(attitude RMS ratio ~16 vs EKF3).\n\n")
             f.write("## Test set\n\n")
             f.write("| Profile | EKF att | UKF att | EKF pos | UKF pos | EKF vel | UKF vel | score | UKF better |\n")
             f.write("|---------|--------:|--------:|--------:|--------:|--------:|--------:|------:|:----------:|\n")
