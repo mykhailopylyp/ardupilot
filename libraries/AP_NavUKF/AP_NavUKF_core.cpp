@@ -773,10 +773,10 @@ void NavUKF_core::UpdateStrapdownEquationsNED()
 
     // transform body delta velocities to delta velocities in the nav frame
     // use the nav frame from previous time step as the delta velocities
-    // have been rotated into that frame. 0.5*Δθ×Δv is the first-order
-    // rotational / sculling correction (Savage).
+    // have been rotated into that frame
+    // * and + operators have been overloaded
     Vector3F delVelNav;  // delta velocity vector in earth axes
-    delVelNav  = prevTnb.mul_transpose(delVelCorrected + (delAngCorrected % delVelCorrected) * 0.5f);
+    delVelNav  = prevTnb.mul_transpose(delVelCorrected);
     delVelNav.z += GRAVITY_MSS*imuDataDelayed.delVelDT;
 
     // calculate the nav to body cosine matrix
@@ -1098,8 +1098,9 @@ void NavUKF_core::forceCovariancePSD(ftype A[24][24], ftype scratch[24][24], uin
 }
 
 // Map IMU process noise into the same multiplicative-quaternion / NED-velocity
-// embedding used by UT residuals. Adding diag(daxVar) on q0..q3 is geometrically
-// wrong and inflates the unused quaternion-constraint direction.
+// embedding used by UT residuals. Gyro variances are scaled by 4 so that
+// ||J col||^2 * 4 = 1 matches the rotation-vector variance in the 0.5*dtheta
+// embedding (unscaled J Q J' under-noises attitude and over-trusts the IMU).
 static void add_imu_process_noise(ftype P[24][24],
                                   const ftype q[4],
                                   const Matrix3F &Tnb,
@@ -1112,7 +1113,7 @@ static void add_imu_process_noise(ftype P[24][24],
         {  0.5f * q[3],  0.5f * q[0], -0.5f * q[1] },
         { -0.5f * q[2],  0.5f * q[1],  0.5f * q[0] },
     };
-    const ftype gvar[3] = { daxVar, dayVar, dazVar };
+    const ftype gvar[3] = { 4.0f * daxVar, 4.0f * dayVar, 4.0f * dazVar };
     for (uint8_t a = 0; a < 3; a++) {
         for (uint8_t i = 0; i < 4; i++) {
             for (uint8_t j = i; j < 4; j++) {
@@ -1492,8 +1493,8 @@ void NavUKF_core::propagateSigmaPoint(ftype x[24],
     quat.normalize();
 
     // Velocity/position: rotate body delta-vel with start-of-step attitude
-    // (matches UpdateStrapdownEquationsNED which uses prevTnb), plus sculling.
-    Vector3F delVelNav = Tnb.mul_transpose(delVelCorr + (delAngCorr % delVelCorr) * 0.5f);
+    // (matches UpdateStrapdownEquationsNED which uses prevTnb).
+    Vector3F delVelNav = Tnb.mul_transpose(delVelCorr);
     delVelNav.z += GRAVITY_MSS * delVelDT;
 
     Vector3F velocity(x[4], x[5], x[6]);
