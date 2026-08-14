@@ -103,6 +103,7 @@ Tools/autotest/autotest.py build.Plane test.Plane.NavUKFSmoke --force-ahrs-type=
 - Sigma param sweep (UKF primary only): `test.Plane.NavUKFSigmaSweep` → `docs/navukf_sigma_sweep/`.
 - Tune/validate campaign: `test.PlaneTests1a.NavUKFTuneValidate` → `docs/navukf_tune_validate/`.
 - Algorithm test/validation vs EKF3: `test.Plane.NavUKFAlgoValidate` → `docs/navukf_algo_validate/`.
+- Same campaign with noisier / nonlinear SITL IMU and mag (`SIM_GYR1_RND`, `SIM_ACC1_RND`, `SIM_MAG_RND`, scale, soft-iron, anomaly): `test.Plane.NavUKFAlgoValidateHarsh` → `docs/navukf_algo_validate_harsh/`.
 - Optional EKF3-style log messages (beacon/timing/GSF detail) are trimmed to keep `LogMessages` under ID limits.
 - Prefer comparing UKF vs EKF3 on the same SITL mission before any flight use.
 - Do not set UKF as default for production vehicles without maintainer review.
