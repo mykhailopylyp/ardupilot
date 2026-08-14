@@ -503,15 +503,46 @@ class AutoTestPlane(vehicle_test_suite.TestSuite):
         '''Test-set then held-out UKF vs EKF3 after UT algorithm changes.
 
         Test profiles: tune_bank, tune_vert, tune_acro.
-        First test profile A/B ScaledUT vs Cubature; winner used thereafter.
         Validation profiles: val_mixed, val_endurance.
         Writes docs/navukf_algo_validate/.
         '''
+        self._navukf_algo_validate_campaign(
+            out_dir_name="navukf_algo_validate",
+            notes=(
+                "Restored Euclidean UT mean and additive IMU Q after tangent-mean "
+                "and cubature failed on the test set (cubature tune_bank att ratio "
+                "~16). Scaled UT ALPHA=0.35 BETA=2 KAPPA=0 SIGMA=0. Medium GPS. "
+                "Score = mean(UKF_primary/EKF_primary) over att/pos/vel."
+            ),
+        )
+
+    def NavUKFAlgoValidateHarsh(self):
+        '''Same UKF vs EKF3 campaign with noisier / nonlinear SITL sensors.
+
+        Uses only SIM_* (and existing medium GPS) parameters; no firmware change.
+        Writes docs/navukf_algo_validate_harsh/.
+        '''
+        self._navukf_algo_validate_campaign(
+            out_dir_name="navukf_algo_validate_harsh",
+            extra_params=self._navukf_harsh_imu_mag_params(),
+            notes=(
+                "Same profiles and UKF defaults as NavUKFAlgoValidate, plus SITL "
+                "IMU/gyro/magnetometer noise, axis scale error, mag soft-iron, "
+                "altitude-dependent mag anomaly, motor mag interference, and IMU "
+                "lever-arm. Medium GPS. Score = mean(UKF_primary/EKF_primary) "
+                "over att/pos/vel."
+            ),
+        )
+
+    def _navukf_algo_validate_campaign(self, out_dir_name, extra_params=None,
+                                       notes=None):
+        '''Shared UKF vs EKF3 test-set then held-out RMS campaign.'''
         import json
         import os
         import time
 
-        out_dir = os.path.join(self.rootdir(), "docs", "navukf_algo_validate")
+        extra_params = extra_params or {}
+        out_dir = os.path.join(self.rootdir(), "docs", out_dir_name)
         os.makedirs(out_dir, exist_ok=True)
 
         test_profiles = ["tune_bank", "tune_vert", "tune_acro"]
@@ -527,6 +558,7 @@ class AutoTestPlane(vehicle_test_suite.TestSuite):
                 ukf_kappa=kappa,
                 require_ukf_primary=require_ukf,
                 ukf_sigma=sigma,
+                extra_params=extra_params,
             )
             run["UKF_SIGMA"] = int(sigma)
             return run
@@ -590,12 +622,8 @@ class AutoTestPlane(vehicle_test_suite.TestSuite):
         val_mean = sum(val_scores) / len(val_scores)
         payload = {
             "generated_unix": time.time(),
-            "notes": (
-                "Restored Euclidean UT mean and additive IMU Q after tangent-mean "
-                "and cubature failed on the test set (cubature tune_bank att ratio "
-                "~16). Scaled UT ALPHA=0.35 BETA=2 KAPPA=0 SIGMA=0. Medium GPS. "
-                "Score = mean(UKF_primary/EKF_primary) over att/pos/vel."
-            ),
+            "notes": notes,
+            "extra_params": extra_params,
             "UKF_ALPHA": alpha,
             "UKF_BETA": beta,
             "UKF_KAPPA": kappa,
@@ -616,8 +644,15 @@ class AutoTestPlane(vehicle_test_suite.TestSuite):
         with open(md_path, "w", encoding="utf-8") as f:
             f.write("# NavUKF algorithm test / validation vs EKF3\n\n")
             f.write("%s\n\n" % payload["notes"])
-            f.write("Cubature (UKF_SIGMA=1) was screened out on tune_bank "
-                    "(attitude RMS ratio ~16 vs EKF3).\n\n")
+            if extra_params:
+                f.write("## SITL sensor params\n\n")
+                f.write("| Param | Value |\n|------:|------:|\n")
+                for key in sorted(extra_params):
+                    f.write("| %s | %g |\n" % (key, extra_params[key]))
+                f.write("\n")
+            else:
+                f.write("Cubature (UKF_SIGMA=1) was screened out on tune_bank "
+                        "(attitude RMS ratio ~16 vs EKF3).\n\n")
             f.write("## Test set\n\n")
             f.write("| Profile | EKF att | UKF att | EKF pos | UKF pos | EKF vel | UKF vel | score | UKF better |\n")
             f.write("|---------|--------:|--------:|--------:|--------:|--------:|--------:|------:|:----------:|\n")
@@ -657,10 +692,54 @@ class AutoTestPlane(vehicle_test_suite.TestSuite):
             "UKF_POSNE_M_NSE": 2.0,
         }
 
+    def _navukf_harsh_imu_mag_params(self):
+        '''SITL IMU/gyro/mag noise and nonlinearity (no firmware change).
+
+        Values are stressful but below copter vibration-failsafe extremes
+        (SIM_GYR1_RND=20/200). Default SITL gyro/accel RND is 0.
+        '''
+        return {
+            # Throttle-scaled broadband IMU noise (deg/s and m/s/s).
+            "SIM_GYR1_RND": 8.0,
+            "SIM_ACC1_RND": 2.5,
+            "SIM_MAG_RND": 25.0,
+            # Per-axis scale error: gyro is percent; accel divides if nonzero.
+            "SIM_GYR1_SCALE_X": 2.5,
+            "SIM_GYR1_SCALE_Y": -1.5,
+            "SIM_GYR1_SCALE_Z": 3.0,
+            "SIM_ACC1_SCAL_X": 1.03,
+            "SIM_ACC1_SCAL_Y": 0.97,
+            "SIM_ACC1_SCAL_Z": 1.02,
+            # Uncorrected mag soft-iron (SITL inverts DIA/ODI onto truth field).
+            "SIM_MAG1_DIA_X": 1.06,
+            "SIM_MAG1_DIA_Y": 0.95,
+            "SIM_MAG1_DIA_Z": 1.04,
+            "SIM_MAG1_ODI_X": 0.04,
+            "SIM_MAG1_ODI_Y": -0.03,
+            "SIM_MAG1_ODI_Z": 0.035,
+            "SIM_MAG1_SCALING": 1.08,
+            # Altitude-dependent earth-field anomaly (1/R^3) and motor current.
+            "SIM_MAG_ALY_X": 120.0,
+            "SIM_MAG_ALY_Y": 60.0,
+            "SIM_MAG_ALY_Z": -80.0,
+            "SIM_MAG_ALY_HGT": 180.0,
+            "SIM_MAG_MOT_X": 6.0,
+            "SIM_MAG_MOT_Y": -4.0,
+            "SIM_MAG_MOT_Z": 3.0,
+            # Lever-arm (centripetal / angular accel) and engine-like vibration.
+            "SIM_IMU_POS_X": 0.12,
+            "SIM_IMU_POS_Y": 0.06,
+            "SIM_IMU_POS_Z": -0.04,
+            "SIM_VIB_FREQ_X": 22.0,
+            "SIM_VIB_FREQ_Y": 28.0,
+            "SIM_VIB_FREQ_Z": 18.0,
+        }
+
     def _navukf_single_rms_flight(self, ahrs_type, flight_profile,
                                    ukf_alpha, ukf_beta, ukf_kappa,
                                    require_ukf_primary=False,
-                                   ukf_sigma=0):
+                                   ukf_sigma=0,
+                                   extra_params=None):
         '''One SITL flight; return RMS dict for XKF1/UKF1 vs SIM.'''
         params = {
             "AHRS_EKF_TYPE": ahrs_type,
@@ -678,6 +757,8 @@ class AutoTestPlane(vehicle_test_suite.TestSuite):
             "LOG_DARM_RATEMAX": 0,
         }
         params.update(self._navukf_medium_gps_params())
+        if extra_params:
+            params.update(extra_params)
         self.set_parameters(params)
         self.context_collect("STATUSTEXT")
         self.context_get().collections["STATUSTEXT"] = []
@@ -740,6 +821,7 @@ class AutoTestPlane(vehicle_test_suite.TestSuite):
                 "UKF_BETA": float(ukf_beta),
                 "UKF_KAPPA": float(ukf_kappa),
                 "UKF_SIGMA": int(ukf_sigma),
+                "extra_params": extra_params or {},
             },
         }
 
@@ -9706,6 +9788,7 @@ class AutoTestPlane(vehicle_test_suite.TestSuite):
             self.NavUKFEKF3RMS_UT_Complex,
             self.NavUKFTuneValidate,
             self.NavUKFAlgoValidate,
+            self.NavUKFAlgoValidateHarsh,
             self.ThrottleFailsafeFence,
             self.NoShortFailsafe,
             self.SoaringClimbRate,
