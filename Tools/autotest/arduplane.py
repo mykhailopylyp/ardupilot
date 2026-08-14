@@ -699,10 +699,12 @@ class AutoTestPlane(vehicle_test_suite.TestSuite):
         (SIM_GYR1_RND=20/200). Default SITL gyro/accel RND is 0.
         '''
         return {
+            # Allow distorted mag vs WMM so MAG_ALY/DIA can be nonzero on the ground.
+            "ARMING_MAGTHRESH": 400,
             # Throttle-scaled broadband IMU noise (deg/s and m/s/s).
             "SIM_GYR1_RND": 8.0,
             "SIM_ACC1_RND": 2.5,
-            "SIM_MAG_RND": 25.0,
+            "SIM_MAG_RND": 20.0,
             # Per-axis scale error: gyro is percent; accel divides if nonzero.
             "SIM_GYR1_SCALE_X": 2.5,
             "SIM_GYR1_SCALE_Y": -1.5,
@@ -717,11 +719,11 @@ class AutoTestPlane(vehicle_test_suite.TestSuite):
             "SIM_MAG1_ODI_X": 0.04,
             "SIM_MAG1_ODI_Y": -0.03,
             "SIM_MAG1_ODI_Z": 0.035,
-            "SIM_MAG1_SCALING": 1.08,
+            "SIM_MAG1_SCALING": 1.04,
             # Altitude-dependent earth-field anomaly (1/R^3) and motor current.
-            "SIM_MAG_ALY_X": 120.0,
-            "SIM_MAG_ALY_Y": 60.0,
-            "SIM_MAG_ALY_Z": -80.0,
+            "SIM_MAG_ALY_X": 80.0,
+            "SIM_MAG_ALY_Y": 40.0,
+            "SIM_MAG_ALY_Z": -50.0,
             "SIM_MAG_ALY_HGT": 180.0,
             "SIM_MAG_MOT_X": 6.0,
             "SIM_MAG_MOT_Y": -4.0,
