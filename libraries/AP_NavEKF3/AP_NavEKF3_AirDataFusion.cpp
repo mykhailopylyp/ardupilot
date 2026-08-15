@@ -153,6 +153,13 @@ void NavEKF3_core::SelectTasFusion()
         airSpdFusionDelayed = false;
     }
 
+    // Pure inertial coast: do not fuse airspeed (that would be wind-relative dead reckoning)
+    if (frontend->option_is_enabled(NavEKF3::Option::InertialNav) &&
+        frontend->sources.getPosXYSource(core_index) == AP_NavEKF_Source::SourceXY::NONE) {
+        tasDataToFuse = false;
+        return;
+    }
+
     // get true airspeed measurement
     readAirSpdData();
 
@@ -180,6 +187,12 @@ void NavEKF3_core::SelectBetaDragFusion()
         return;
     } else {
         sideSlipFusionDelayed = false;
+    }
+
+    // Pure inertial coast: do not use sideslip/drag to constrain velocity
+    if (frontend->option_is_enabled(NavEKF3::Option::InertialNav) &&
+        frontend->sources.getPosXYSource(core_index) == AP_NavEKF_Source::SourceXY::NONE) {
+        return;
     }
 
     // set true when the fusion time interval has triggered

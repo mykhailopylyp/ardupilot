@@ -55,10 +55,14 @@ bool Plane::auto_takeoff_check(void)
        takeoff_state.waiting_for_rudder_neutral = false;
     }  
 
-    // Check for bad GPS
+    // Check for bad GPS. Allow takeoff without GPS when the EKF has a
+    // valid absolute position (opt-in inertial navigation).
     if (gps.status() < AP_GPS_FixType::FIX_3D) {
-        // no auto takeoff without GPS lock
-        return false;
+        nav_filter_status filt_state {};
+        if (!ahrs.get_filter_status(filt_state) || !filt_state.flags.horiz_pos_abs) {
+            // no auto takeoff without GPS lock or a valid EKF position
+            return false;
+        }
     }
 
     bool do_takeoff_attitude_check = !(flight_option_enabled(FlightOptions::DISABLE_TOFF_ATTITUDE_CHK));

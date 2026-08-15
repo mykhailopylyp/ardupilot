@@ -287,7 +287,7 @@ void NavEKF3_core::setAidingMode()
             // and IMU gyro bias estimates have stabilised
             // If GPS usage has been prohiited then we use flow aiding provided optical flow data is present
             // GPS aiding is the preferred option unless excluded by the user
-            if (readyToUseGPS() || readyToUseRangeBeacon() || readyToUseExtNav()) {
+            if (readyToUseGPS() || readyToUseRangeBeacon() || readyToUseExtNav() || readyToUseInertialNav()) {
                 PV_AidingMode = AID_ABSOLUTE;
             } else if (
 #if EK3_FEATURE_OPTFLOW_FUSION
@@ -385,7 +385,11 @@ void NavEKF3_core::setAidingMode()
                     (imuSampleTime_ms - lastGpsPosPassTime_ms > maxLossTime_ms);
             }
 
-            if (attAidLossCritical) {
+            // InertialNav keeps strapdown coasting instead of falling back to const-pos or
+            // declaring a GPS timeout. Mag and baro continue to be fused.
+            const bool inertialNav = frontend->option_is_enabled(NavEKF3::Option::InertialNav);
+
+            if (attAidLossCritical && !inertialNav) {
                 // if the loss of attitude data is critical, then put the filter into a constant position mode
                 PV_AidingMode = AID_NONE;
                 posTimeout = true;
@@ -393,7 +397,7 @@ void NavEKF3_core::setAidingMode()
                 tasTimeout = true;
                 dragTimeout = true;
                 gpsIsInUse = false;
-             } else if (posAidLossCritical) {
+             } else if (posAidLossCritical && !inertialNav) {
                 // if the loss of position is critical, declare all sources of position aiding as being timed out
                 posTimeout = true;
                 velTimeout = !optFlowUsed && !gpsVelUsed && !bodyOdmUsed;
@@ -483,6 +487,8 @@ void NavEKF3_core::setAidingMode()
                     ResetHeight();
                 }
 #endif // EK3_FEATURE_EXTERNAL_NAV
+            } else if (readyToUseInertialNav()) {
+                GCS_SEND_TEXT(MAV_SEVERITY_INFO, "EKF3 IMU%u is using inertial nav",(unsigned)imu_index);
             }
 
             // clear timeout flags as a precaution to avoid triggering any additional transitions
@@ -490,11 +496,22 @@ void NavEKF3_core::setAidingMode()
             velTimeout = false;
 
             // reset the last fusion accepted times to prevent unwanted activation of timeout logic
-            lastGpsPosPassTime_ms = imuSampleTime_ms;
-            lastVelPassTime_ms = imuSampleTime_ms;
+            // Do not stamp GPS/vel pass times for inertial-only startup; that would report using_gps
+            const bool inertial_only = readyToUseInertialNav() && !readyToUseGPS() &&
 #if EK3_FEATURE_BEACON_FUSION
-            rngBcn.lastPassTime_ms = imuSampleTime_ms;
+                                       !readyToUseRangeBeacon() &&
 #endif
+#if EK3_FEATURE_EXTERNAL_NAV
+                                       !readyToUseExtNav() &&
+#endif
+                                       true;
+            if (!inertial_only) {
+                lastGpsPosPassTime_ms = imuSampleTime_ms;
+                lastVelPassTime_ms = imuSampleTime_ms;
+#if EK3_FEATURE_BEACON_FUSION
+                rngBcn.lastPassTime_ms = imuSampleTime_ms;
+#endif
+            }
             break;
         }
 
@@ -591,6 +608,18 @@ bool NavEKF3_core::readyToUseGPS(void) const
     }
 
     return validOrigin && tiltAlignComplete && yawAlignComplete && (delAngBiasLearned || assume_zero_sideslip()) && gpsGoodToAlign && gpsDataToFuse;
+}
+
+// return true if unaided IMU navigation can start (opt-in via EK3_OPTIONS InertialNav)
+bool NavEKF3_core::readyToUseInertialNav(void) const
+{
+    if (!frontend->option_is_enabled(NavEKF3::Option::InertialNav)) {
+        return false;
+    }
+    if (frontend->sources.getPosXYSource(core_index) != AP_NavEKF_Source::SourceXY::NONE) {
+        return false;
+    }
+    return validOrigin && tiltAlignComplete && yawAlignComplete && (delAngBiasLearned || assume_zero_sideslip());
 }
 
 // return true if the filter to be ready to use the beacon range measurements
@@ -766,8 +795,11 @@ void  NavEKF3_core::updateFilterStatus(void)
     bool doingFlowNav = (PV_AidingMode != AID_NONE) && flowDataValid;
     bool doingWindRelNav = (!tasTimeout && assume_zero_sideslip()) || !dragTimeout;
     bool doingNormalGpsNav = !posTimeout && (PV_AidingMode == AID_ABSOLUTE);
+    bool doingInertialNav = frontend->option_is_enabled(NavEKF3::Option::InertialNav) &&
+                            (PV_AidingMode == AID_ABSOLUTE) &&
+                            (frontend->sources.getPosXYSource(core_index) == AP_NavEKF_Source::SourceXY::NONE);
     bool someVertRefData = (!velTimeout && (useGpsVertVel || useExtNavVel)) || !hgtTimeout;
-    bool someHorizRefData = !(velTimeout && posTimeout && tasTimeout && dragTimeout) || doingFlowNav || doingBodyVelNav;
+    bool someHorizRefData = !(velTimeout && posTimeout && tasTimeout && dragTimeout) || doingFlowNav || doingBodyVelNav || doingInertialNav;
     bool filterHealthy = healthy() && tiltAlignComplete && (yawAlignComplete || (!use_compass() && (PV_AidingMode != AID_ABSOLUTE)));
 
     // If GPS height usage is specified, height is considered to be inaccurate until the GPS passes all checks
@@ -783,9 +815,9 @@ void  NavEKF3_core::updateFilterStatus(void)
 #else
     const bool optflow_gnd_offset = gndOffsetValid;
 #endif
-    status.flags.horiz_pos_rel = ((doingFlowNav && optflow_gnd_offset) || doingWindRelNav || doingNormalGpsNav || doingBodyVelNav) && filterHealthy;   // relative horizontal position estimate valid
+    status.flags.horiz_pos_rel = ((doingFlowNav && optflow_gnd_offset) || doingWindRelNav || doingNormalGpsNav || doingBodyVelNav || doingInertialNav) && filterHealthy;   // relative horizontal position estimate valid
 
-    status.flags.horiz_pos_abs = doingNormalGpsNav && filterHealthy; // absolute horizontal position estimate valid
+    status.flags.horiz_pos_abs = (doingNormalGpsNav || doingInertialNav) && filterHealthy; // absolute horizontal position estimate valid
     status.flags.vert_pos = !hgtTimeout && filterHealthy && !hgtNotAccurate; // vertical position estimate valid
     status.flags.terrain_alt = gndOffsetValid && filterHealthy;		// terrain height estimate valid
     status.flags.const_pos_mode = (PV_AidingMode == AID_NONE) && filterHealthy;     // constant position mode
@@ -795,6 +827,10 @@ void  NavEKF3_core::updateFilterStatus(void)
     status.flags.takeoff = dal.get_takeoff_expected(); // The EKF has been told to expect takeoff is in a ground effect mitigation mode and has started the EKF-GSF yaw estimator
     status.flags.touchdown = dal.get_touchdown_expected(); // The EKF has been told to detect touchdown and is in a ground effect mitigation mode
     status.flags.using_gps = ((imuSampleTime_ms - lastGpsPosPassTime_ms) < 4000) && (PV_AidingMode == AID_ABSOLUTE);
+    if (frontend->option_is_enabled(NavEKF3::Option::InertialNav) &&
+        frontend->sources.getPosXYSource(core_index) != AP_NavEKF_Source::SourceXY::GPS) {
+        status.flags.using_gps = false;
+    }
     status.flags.gps_glitching = !gpsAccuracyGood && (PV_AidingMode == AID_ABSOLUTE) && (frontend->sources.getPosXYSource(core_index) == AP_NavEKF_Source::SourceXY::GPS); // GPS glitching is affecting navigation accuracy
     status.flags.gps_quality_good = gpsGoodToAlign;
     // for reporting purposes we report rejecting airspeed after 3s of not fusing when we want to fuse the data

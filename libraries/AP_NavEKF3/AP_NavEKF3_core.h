@@ -882,6 +882,9 @@ private:
     // return true if the vehicle code has requested the filter to be ready for flight
     bool readyToUseGPS(void) const;
 
+    // return true if EK3_OPTIONS InertialNav is enabled and the filter can coast on IMU+mag+baro
+    bool readyToUseInertialNav(void) const;
+
     // return true if the filter to be ready to use the beacon range measurements
     bool readyToUseRangeBeacon(void) const;
 
