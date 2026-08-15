@@ -24,7 +24,9 @@ void NavEKF3_core::controlMagYawReset()
     // Vehicles that can use a zero sideslip assumption (Planes) are a special case
     // They can use the GPS velocity to recover from bad initial compass data
     // This allows recovery for heading alignment errors due to compass faults
-    if (assume_zero_sideslip() && (!finalInflightYawInit || !yawAlignComplete) && inFlight) {
+    // Skip GPS yaw when inertial-only nav is selected — there is no GPS course.
+    if (assume_zero_sideslip() && (!finalInflightYawInit || !yawAlignComplete) && inFlight &&
+        !frontend->option_is_enabled(NavEKF3::Option::InertialNav)) {
         gpsYawResetRequest = true;
         return;
     } else {

@@ -10,14 +10,17 @@
 # --- EKF3: inertial-only (no GPS / flow / beacon / extnav) ---
 AHRS_EKF_TYPE    3
 EK3_ENABLE       1
+EK2_ENABLE       0
 EK3_OPTIONS     16          # bit4 InertialNav
 EK3_SRC1_POSXY   0          # None
 EK3_SRC1_VELXY   0          # None
 EK3_SRC1_VELZ    0          # None
 EK3_SRC1_POSZ    1          # Baro
 EK3_SRC1_YAW     1          # Compass
+EK3_MAG_CAL      4          # Always: 3-axis mag for gyro-bias learning
 GPS1_TYPE        0
 AHRS_GPS_USE     0
+COMPASS_LEARN    0
 
 # Prevent DCM fallback when the EKF is coasting without GPS.
 # bit0 DisableDCMFallbackFW + bit1 DisableDCMFallbackVTOL + bit4 UseRecordedOriginForNonGPS

@@ -499,6 +499,15 @@ void Plane::update_GPS_10Hz(void)
         ground_start_count = 5;
     }
 
+    // GPS-less inertial nav: home from EKF origin so TAKEOFF/GUIDED can start
+    if (!ahrs.home_is_set() && gps.status() < AP_GPS_FixType::FIX_3D) {
+        Location origin;
+        if (ahrs.get_origin(origin) && set_home_persistently(origin)) {
+            next_WP_loc = prev_WP_loc = home;
+            ground_start_count = 0;
+        }
+    }
+
     calc_gndspeed_undershoot();
 }
 

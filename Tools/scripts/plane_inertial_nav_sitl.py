@@ -98,6 +98,46 @@ def guided_wp(mav, lat, lon, alt_m):
     )
 
 
+def set_home(mav, lat, lon, alt_m):
+    mav.mav.command_int_send(
+        mav.target_system, mav.target_component,
+        mavutil.mavlink.MAV_FRAME_GLOBAL,
+        mavutil.mavlink.MAV_CMD_DO_SET_HOME,
+        0, 0,
+        0, 0, 0, 0,
+        int(lat * 1e7), int(lon * 1e7), alt_m)
+    ack = mav.recv_match(type="COMMAND_ACK", blocking=True, timeout=5)
+    if ack:
+        print("SET_HOME ack result=%s" % ack.result)
+
+
+def wait_inertial_nav(mav, timeout=90):
+    start = time.time()
+    saw_text = False
+    while time.time() - start < timeout:
+        m = mav.recv_match(blocking=True, timeout=1)
+        if m is None:
+            continue
+        t = m.get_type()
+        if t == "STATUSTEXT":
+            text = m.text if isinstance(m.text, str) else m.text.decode("utf-8", "replace")
+            print("STATUSTEXT:", text)
+            if "using inertial nav" in text.lower():
+                saw_text = True
+        elif t == "EKF_STATUS_REPORT":
+            flags = m.flags
+            if flags & mavlink.EKF_POS_HORIZ_ABS:
+                print("EKF_STATUS_REPORT flags=0x%x (horiz pos abs)" % flags)
+                return True
+            if int(time.time() - start) % 5 == 0:
+                print("EKF flags=0x%x" % flags)
+        elif t == "HEARTBEAT":
+            pass
+    if saw_text:
+        return True
+    raise TimeoutError("did not see inertial nav / EKF horiz pos")
+
+
 def fly(args):
     mav = mavutil.mavlink_connection(args.master, autoreconnect=True)
     wait_heartbeat(mav)
@@ -106,7 +146,9 @@ def fly(args):
         mavutil.mavlink.MAV_DATA_STREAM_ALL, 4, 1)
 
     print("Waiting for inertial nav...")
-    wait_text(mav, "using inertial nav", timeout=args.align_timeout)
+    wait_inertial_nav(mav, timeout=args.align_timeout)
+
+    set_home(mav, CMAC_LAT, CMAC_LON, 584)
 
     set_mode(mav, "TAKEOFF")
     mav.arducopter_arm()

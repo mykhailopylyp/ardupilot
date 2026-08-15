@@ -351,6 +351,11 @@ void NavEKF3_core::detectFlight()
 
         // trigger on ground speed
         const ftype gndSpdThresholdSq = sq(5.0f);
+        if (frontend->option_is_enabled(NavEKF3::Option::InertialNav) &&
+            frontend->sources.getPosXYSource(core_index) == AP_NavEKF_Source::SourceXY::NONE) {
+            // No GPS velocity: use the strapdown estimate (and airspeed/height below)
+            gndSpdSq = sq(stateStruct.velocity.x) + sq(stateStruct.velocity.y);
+        }
         if (gndSpdSq > gndSpdThresholdSq + sq(gpsSpdAccuracy)) {
             highGndSpd = true;
         }

@@ -522,7 +522,13 @@ void GCS_MAVLINK_Plane::packetReceived(const mavlink_status_t &status,
 
 bool Plane::set_home_to_current_location(bool _lock)
 {
-    if (!set_home_persistently(AP::gps().location())) {
+    Location loc;
+    if (gps.status() >= AP_GPS_FixType::FIX_3D) {
+        loc = gps.location();
+    } else if (!ahrs.get_location(loc)) {
+        return false;
+    }
+    if (!set_home_persistently(loc)) {
         return false;
     }
     if (_lock) {
