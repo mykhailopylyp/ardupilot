@@ -1,0 +1,87 @@
+# Plane SITL: GPS-aided then inertial coast (EK3_OPTIONS InertialNav)
+#
+# First segment uses GPS (EK3_SRC1). After GPS is disabled, switch to
+# EK3_SRC2 (POSXY/VELXY none, mag+baro) via MAV_CMD_SET_EKF_SOURCE_SET
+# so the remainder is strapdown inertial rather than airspeed dead-reckoning.
+#
+# Gyro bias 0.6 deg/h = 2.909e-6 rad/s on each SIM_GYR1_BIAS axis.
+#
+#   Tools/autotest/sim_vehicle.py -v ArduPlane -f plane -w \
+#     --add-param-file=Tools/autotest/default_params/plane-gps-then-inertial.parm
+
+AHRS_EKF_TYPE    3
+EK3_ENABLE       1
+EK2_ENABLE       0
+EK3_OPTIONS     16          # bit4 InertialNav
+EK3_IMU_MASK     1
+
+# SRC1: GPS position/velocity while GPS is available
+EK3_SRC1_POSXY   3
+EK3_SRC1_VELXY   3
+EK3_SRC1_VELZ    3
+EK3_SRC1_POSZ    1          # Baro
+EK3_SRC1_YAW     1          # Compass
+
+# SRC2: inertial coast (no GPS / airspeed / sideslip fusion)
+EK3_SRC2_POSXY   0
+EK3_SRC2_VELXY   0
+EK3_SRC2_VELZ    0
+EK3_SRC2_POSZ    1
+EK3_SRC2_YAW     1
+
+EK3_MAG_CAL      4
+GPS1_TYPE        1
+AHRS_GPS_USE     1
+SIM_GPS1_ENABLE  1
+COMPASS_LEARN    0
+COMPASS_USE2     0
+COMPASS_USE3     0
+
+# bit0 DisableDCMFallbackFW + bit1 DisableDCMFallbackVTOL + bit4 UseRecordedOriginForNonGPS
+AHRS_OPTIONS    19
+
+AHRS_ORIGIN_LAT -35.363261
+AHRS_ORIGIN_LON 149.165230
+AHRS_ORIGIN_ALT 584
+
+EK3_GYRO_P_NSE   0.0001
+EK3_ACC_P_NSE    0.01
+EK3_GBIAS_P_NSE  0.00001
+EK3_ABIAS_P_NSE  0.00001
+EK3_MAG_M_NSE    0.05
+
+# Navigation-grade idle noise so the injected 0.6 deg/h bias is visible
+SIM_GYR_NMN      0.00001
+SIM_ACC_NMN      0.00001
+SIM_GYR1_RND     0
+SIM_ACC1_RND     0
+# 0.6 deg/h = 0.6 * pi/180 / 3600 rad/s
+SIM_GYR1_BIAS_X  0.000002909
+SIM_GYR1_BIAS_Y  0.000002909
+SIM_GYR1_BIAS_Z  0.000002909
+SIM_ACC1_BIAS_X  0
+SIM_ACC1_BIAS_Y  0
+SIM_ACC1_BIAS_Z  0
+SIM_DRIFT_SPEED  0
+SIM_WIND_SPD     0
+
+ARMING_CHECK     0
+FS_EKF_THRESH    0
+BATT_LOW_VOLT    0
+BATT_CRT_VOLT    0
+BATT_FS_LOW_ACT  0
+BATT_FS_CRT_ACT  0
+TKOFF_THR_MINSPD 0
+THR_FAILSAFE     0
+FS_SHORT_ACTN    0
+FS_LONG_ACTN     0
+
+INS_ACCSCAL_X    1.0
+INS_ACCSCAL_Y    1.0
+INS_ACCSCAL_Z    1.0
+INS_ACC2SCAL_X   1.0
+INS_ACC2SCAL_Y   1.0
+INS_ACC2SCAL_Z   1.0
+
+LOG_BITMASK      176126
+LOG_DISARMED     1
