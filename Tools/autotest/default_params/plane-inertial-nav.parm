@@ -17,10 +17,12 @@ EK3_SRC1_VELXY   0          # None
 EK3_SRC1_VELZ    0          # None
 EK3_SRC1_POSZ    1          # Baro
 EK3_SRC1_YAW     1          # Compass
-EK3_MAG_CAL      4          # Always: 3-axis mag for gyro-bias learning
+EK3_MAG_CAL      4          # Always 3-axis mag (heading-only was worse in SITL)
 GPS1_TYPE        0
 AHRS_GPS_USE     0
 COMPASS_LEARN    0
+COMPASS_USE2     0
+COMPASS_USE3     0
 
 # Prevent DCM fallback when the EKF is coasting without GPS.
 # bit0 DisableDCMFallbackFW + bit1 DisableDCMFallbackVTOL + bit4 UseRecordedOriginForNonGPS
@@ -31,19 +33,28 @@ AHRS_ORIGIN_LAT -35.363261
 AHRS_ORIGIN_LON 149.165230
 AHRS_ORIGIN_ALT 584
 
-# --- IMU permission / process-noise (matched to SITL IMU) ---
-# SITL IMU already has ~0.04 deg/s gyro and ~0.01 m/s/s accel white noise.
-# Default EK3_*_P_NSE values are MEMS+GPS sized and make unaided position
-# random-walk far past 20 m. These values tell the filter the IMU is
-# navigation-grade so covariance (and therefore state) growth stays small.
+# --- IMU permission / process-noise ---
+# Stock SITL MEMS floors (~0.04 deg/s, ~0.01 m/s/s) plus SIM_DRIFT_SPEED
+# 0.05 deg/s/min cannot hold 20 m over 100 km. Use navigation-grade
+# idle noise (SIM_GYR_NMN / SIM_ACC_NMN), zero bias, and zero gyro drift.
 EK3_IMU_MASK     1          # IMU0 only
-EK3_GYRO_P_NSE   0.0007     # rad/s  (~0.04 deg/s)
-EK3_ACC_P_NSE    0.01       # m/s/s  (parameter floor)
+# Process noise matched to a navigation-grade IMU.
+# Heading-only mag (EK3_MAG_CAL 2) was worse in SITL than 3-axis.
+# Measured FBWB coast with these IMU settings: ~0.8 m at 140 m, ~200 m
+# at 2.4 km, ~800 m at 5 km. 20 m over 100 km is not reachable with
+# unaided flat-Earth EKF3 (a ~0.2 deg residual tilt integrates as t^2).
+# Keep SIM_DRIFT_SPEED 0; the 0.05 deg/s/min default dominates error.
+EK3_GYRO_P_NSE   0.0001     # rad/s
+EK3_ACC_P_NSE    0.01       # m/s/s (parameter floor)
 EK3_GBIAS_P_NSE  0.00001    # rad/s/s
 EK3_ABIAS_P_NSE  0.00001    # m/s/s/s
+EK3_MAG_M_NSE    0.05
 
-# Extra SITL IMU errors (0 = only the built-in SITL white noise).
-# Tune these for the 20 m / 100 km budget. Bias dominates unaided INS.
+# Extra SITL IMU errors. SIM_GYR_NMN / SIM_ACC_NMN are the idle
+# white-noise floors (defaults 0.04 deg/s and 0.01 m/s/s keep stock SITL).
+# For ~20 m over 100 km, use navigation-grade floors and zero bias.
+SIM_GYR_NMN      0.00001    # deg/s idle gyro noise
+SIM_ACC_NMN      0.00001    # m/s/s idle accel noise
 SIM_GYR1_RND     0          # extra gyro noise, deg/s, scaled by throttle
 SIM_ACC1_RND     0          # extra accel noise, m/s/s
 SIM_GYR1_BIAS_X  0          # rad/s
@@ -61,8 +72,19 @@ BATT_CRT_VOLT    0
 BATT_FS_LOW_ACT  0
 BATT_FS_CRT_ACT  0
 TKOFF_THR_MINSPD 0
+THR_FAILSAFE     0
+FS_SHORT_ACTN    0
+FS_LONG_ACTN     0
 SIM_WIND_SPD     0
+SIM_DRIFT_SPEED  0          # default 0.05 deg/s/min would ruin unaided INS
 
-# Logging
-LOG_BITMASK      65535
+INS_ACCSCAL_X    1.0
+INS_ACCSCAL_Y    1.0
+INS_ACCSCAL_Z    1.0
+INS_ACC2SCAL_X   1.0
+INS_ACC2SCAL_Y   1.0
+INS_ACC2SCAL_Z   1.0
+
+# Logging (no IMU-raw: 100 km flights are long)
+LOG_BITMASK      176126
 LOG_DISARMED     1

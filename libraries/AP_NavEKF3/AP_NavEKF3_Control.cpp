@@ -619,6 +619,11 @@ bool NavEKF3_core::readyToUseInertialNav(void) const
     if (frontend->sources.getPosXYSource(core_index) != AP_NavEKF_Source::SourceXY::NONE) {
         return false;
     }
+    // Stay in AID_NONE (zero-vel / const-pos) until armed so sitting on
+    // the ground does not integrate IMU noise into a huge position error.
+    if (!motorsArmed) {
+        return false;
+    }
     return validOrigin && tiltAlignComplete && yawAlignComplete && (delAngBiasLearned || assume_zero_sideslip());
 }
 

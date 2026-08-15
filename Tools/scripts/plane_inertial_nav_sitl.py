@@ -111,6 +111,41 @@ def set_home(mav, lat, lon, alt_m):
         print("SET_HOME ack result=%s" % ack.result)
 
 
+def wait_ekf_aligned(mav, timeout=90):
+    start = time.time()
+    yaw_ok = False
+    tilt_ok = False
+    ekf_active = False
+    while time.time() - start < timeout:
+        m = mav.recv_match(blocking=True, timeout=1)
+        if m is None:
+            continue
+        t = m.get_type()
+        if t == "STATUSTEXT":
+            text = m.text if isinstance(m.text, str) else m.text.decode("utf-8", "replace")
+            print("STATUSTEXT:", text)
+            low = text.lower()
+            if "yaw alignment complete" in low:
+                yaw_ok = True
+            if "tilt alignment complete" in low:
+                tilt_ok = True
+            if "ekf3 active" in low:
+                ekf_active = True
+            if yaw_ok and tilt_ok and ekf_active:
+                return
+        elif t == "EKF_STATUS_REPORT":
+            flags = m.flags
+            att = bool(flags & mavlink.EKF_ATTITUDE)
+            vvel = bool(flags & mavlink.EKF_VELOCITY_VERT)
+            vpos = bool(flags & mavlink.EKF_POS_VERT_ABS)
+            if att and vvel and vpos:
+                print("EKF aligned flags=0x%x" % flags)
+                return
+            if int(time.time() - start) % 5 == 0:
+                print("EKF flags=0x%x" % flags)
+    raise TimeoutError("EKF did not align")
+
+
 def wait_inertial_nav(mav, timeout=90):
     start = time.time()
     saw_text = False
@@ -138,6 +173,38 @@ def wait_inertial_nav(mav, timeout=90):
     raise TimeoutError("did not see inertial nav / EKF horiz pos")
 
 
+def rc_override(mav, throttle=1000):
+    mav.mav.rc_channels_override_send(
+        mav.target_system, mav.target_component,
+        1500, 1500, throttle, 1500, 0, 0, 0, 0)
+
+
+def arm_vehicle(mav, timeout=30):
+    rc_override(mav, 1000)
+    time.sleep(0.5)
+    mav.mav.command_long_send(
+        mav.target_system, mav.target_component,
+        mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM,
+        0, 1, 21196, 0, 0, 0, 0, 0)
+    start = time.time()
+    while time.time() - start < timeout:
+        rc_override(mav, 1000)
+        m = mav.recv_match(blocking=True, timeout=0.5)
+        if m is None:
+            continue
+        t = m.get_type()
+        if t == "STATUSTEXT":
+            text = m.text if isinstance(m.text, str) else m.text.decode("utf-8", "replace")
+            print("STATUSTEXT:", text)
+        elif t == "COMMAND_ACK":
+            print("ARM ack command=%s result=%s" % (m.command, m.result))
+        elif t == "HEARTBEAT":
+            if m.base_mode & mavutil.mavlink.MAV_MODE_FLAG_SAFETY_ARMED:
+                print("Armed")
+                return
+    raise TimeoutError("arm failed")
+
+
 def fly(args):
     mav = mavutil.mavlink_connection(args.master, autoreconnect=True)
     wait_heartbeat(mav)
@@ -145,45 +212,51 @@ def fly(args):
         mav.target_system, mav.target_component,
         mavutil.mavlink.MAV_DATA_STREAM_ALL, 4, 1)
 
-    print("Waiting for inertial nav...")
-    wait_inertial_nav(mav, timeout=args.align_timeout)
+    print("Waiting for EKF alignment...")
+    wait_ekf_aligned(mav, timeout=args.align_timeout)
 
     set_home(mav, CMAC_LAT, CMAC_LON, 584)
 
     set_mode(mav, "TAKEOFF")
-    mav.arducopter_arm()
-    start = time.time()
-    while time.time() - start < 30:
-        m = mav.recv_match(type="HEARTBEAT", blocking=True, timeout=1)
-        if m and (m.base_mode & mavutil.mavlink.MAV_MODE_FLAG_SAFETY_ARMED):
-            break
-    else:
-        raise TimeoutError("arm failed")
+    arm_vehicle(mav)
+
+    print("Waiting for inertial nav after arm...")
+    wait_inertial_nav(mav, timeout=args.align_timeout)
 
     print("Waiting for altitude...")
     start = time.time()
     while time.time() - start < args.takeoff_timeout:
-        m = mav.recv_match(type="GLOBAL_POSITION_INT", blocking=True, timeout=1)
-        if m and m.relative_alt > 40 * 1000:
+        rc_override(mav, 1500)
+        m = mav.recv_match(blocking=True, timeout=0.5)
+        if m is None:
+            continue
+        t = m.get_type()
+        if t == "STATUSTEXT":
+            text = m.text if isinstance(m.text, str) else m.text.decode("utf-8", "replace")
+            print("STATUSTEXT:", text)
+        elif t == "GLOBAL_POSITION_INT" and m.relative_alt > 40 * 1000:
+            print("Takeoff alt %.1f m" % (m.relative_alt / 1000.0))
             break
     else:
         raise TimeoutError("takeoff altitude not reached")
 
-    dest_lat, dest_lon = offset_latlon(CMAC_LAT, CMAC_LON, args.distance, 0)
-    set_mode(mav, "GUIDED")
-    guided_wp(mav, dest_lat, dest_lon, 100)
-    print("Guided to %.6f,%.6f (%.0f m north)" % (dest_lat, dest_lon, args.distance))
+    print("Takeoff complete, switching to FBWB (straight inertial coast)")
+    set_mode(mav, "FBWB")
 
     start_lat = CMAC_LAT
     start_lon = CMAC_LON
     max_err = 0.0
     dist_flown = 0.0
-    last_sim = None
+    ahrs_lat = None
+    ahrs_lon = None
     saw_const_pos = False
     saw_using_gps = False
+    saw_dcm = False
     start = time.time()
+    next_report = start
     while time.time() - start < args.flight_timeout:
-        m = mav.recv_match(blocking=True, timeout=1)
+        rc_override(mav, 1600)
+        m = mav.recv_match(blocking=True, timeout=0.5)
         if m is None:
             continue
         t = m.get_type()
@@ -192,32 +265,48 @@ def fly(args):
             if flags & mavlink.EKF_CONST_POS_MODE:
                 saw_const_pos = True
                 print("FAIL: EKF const-pos mode")
-            # using_gps is not in EKF_STATUS_REPORT; check later in the log
+            if not (flags & mavlink.EKF_POS_HORIZ_ABS):
+                print("WARN: lost horiz pos abs flags=0x%x" % flags)
         elif t == "GPS_RAW_INT":
             if m.fix_type >= 2:
                 saw_using_gps = True
                 print("FAIL: GPS fix_type=%u" % m.fix_type)
         elif t == "GLOBAL_POSITION_INT":
-            dist_flown = gps_distance_m(start_lat, start_lon,
-                                        m.lat * 1e-7, m.lon * 1e-7)
-            if int(dist_flown) % 1000 < 50:
-                print("AHRS dist from origin %.0f m" % dist_flown)
+            lat = m.lat * 1e-7
+            lon = m.lon * 1e-7
+            if abs(lat) > 1.0 and abs(lon) > 1.0:
+                ahrs_lat = lat
+                ahrs_lon = lon
+        elif t == "SIMSTATE":
+            sim_lat = m.lat * 1e-7
+            sim_lon = m.lng * 1e-7
+            if abs(sim_lat) < 1.0:
+                continue
+            dist_flown = gps_distance_m(start_lat, start_lon, sim_lat, sim_lon)
+            if ahrs_lat is not None:
+                err = gps_distance_m(ahrs_lat, ahrs_lon, sim_lat, sim_lon)
+                if err < 1.0e6:
+                    max_err = max(max_err, err)
+            if time.time() >= next_report:
+                print("SIM dist %.0f m  AHRS vs SIM %.2f m" % (dist_flown, max_err))
+                next_report = time.time() + 5
             if dist_flown >= args.distance * 0.98:
                 print("Reached target distance")
                 break
         elif t == "STATUSTEXT":
             text = m.text if isinstance(m.text, str) else m.text.decode("utf-8", "replace")
             print("STATUSTEXT:", text)
-            if "DCM" in text and "active" in text.lower():
+            if "AHRS: DCM active" in text:
+                saw_dcm = True
                 print("FAIL: fell back to DCM")
             if "using GPS" in text:
                 print("FAIL: EKF using GPS")
 
     mav.arducopter_disarm()
     time.sleep(2)
-    print("Flight done. dist=%.0f m const_pos=%s gps_fix=%s" %
-          (dist_flown, saw_const_pos, saw_using_gps))
-    return 1 if (saw_const_pos or saw_using_gps) else 0
+    print("Flight done. sim_dist=%.0f m max_ahrs_err=%.2f m const_pos=%s gps_fix=%s dcm=%s" %
+          (dist_flown, max_err, saw_const_pos, saw_using_gps, saw_dcm))
+    return 1 if (saw_const_pos or saw_using_gps or saw_dcm) else 0
 
 
 def analyse_log(path):
@@ -229,7 +318,7 @@ def analyse_log(path):
     ss_att = 0
     ss_n = 0
     gps_fix_max = 0
-    dcm_msgs = []
+    dcm_active = []
     inertial_msgs = []
     gps_msgs = []
     max_horiz_err = 0.0
@@ -237,7 +326,8 @@ def analyse_log(path):
     last_sim = None
     origin_sim = None
     n_err = 0
-    armed_err = False
+    armed = False
+    inertial_started = False
 
     types = set(["XKF4", "GPS", "MSG", "SIM", "POS", "AHR2", "ATT", "XKF1", "MODE", "EV"])
     while True:
@@ -245,7 +335,24 @@ def analyse_log(path):
         if m is None:
             break
         t = m.get_type()
-        if t == "XKF4" and getattr(m, "C", 0) == 0:
+        if t == "MSG":
+            msg = getattr(m, "Message", "")
+            if "AHRS: DCM active" in msg:
+                dcm_active.append(msg)
+            if "inertial nav" in msg.lower():
+                inertial_msgs.append(msg)
+                inertial_started = True
+            if "using GPS" in msg:
+                gps_msgs.append(msg)
+            if "Armed" in msg:
+                armed = True
+        elif t == "EV":
+            # 10 = ARMED in LogEvent
+            if getattr(m, "Id", None) == 10:
+                armed = True
+        elif not inertial_started:
+            continue
+        elif t == "XKF4" and getattr(m, "C", 0) == 0:
             ss_n += 1
             if m.SS & SS_CONST_POS:
                 ss_const += 1
@@ -258,14 +365,6 @@ def analyse_log(path):
         elif t == "GPS":
             st = getattr(m, "Status", getattr(m, "FixType", 0))
             gps_fix_max = max(gps_fix_max, int(st))
-        elif t == "MSG":
-            msg = getattr(m, "Message", "")
-            if "DCM" in msg:
-                dcm_msgs.append(msg)
-            if "inertial nav" in msg.lower():
-                inertial_msgs.append(msg)
-            if "using GPS" in msg:
-                gps_msgs.append(msg)
         elif t == "SIM":
             sim_lat = m.Lat
             sim_lng = m.Lng
@@ -279,7 +378,7 @@ def analyse_log(path):
             max_horiz_err = max(max_horiz_err, err)
             n_err += 1
 
-    print("XKF4 samples: %u" % ss_n)
+    print("XKF4 samples after inertial-nav start: %u" % ss_n)
     print("  attitude:        %u (%.1f%%)" % (ss_att, 100.0 * ss_att / max(1, ss_n)))
     print("  horiz_pos_abs:   %u (%.1f%%)" % (ss_abs, 100.0 * ss_abs / max(1, ss_n)))
     print("  const_pos_mode:  %u (%.1f%%)  (must be 0 after alignment)" %
@@ -288,15 +387,14 @@ def analyse_log(path):
           (ss_gps, 100.0 * ss_gps / max(1, ss_n)))
     print("GPS max Status/FixType: %u (0 means no GPS)" % gps_fix_max)
     print("Inertial-nav MSG:", inertial_msgs[:5] or "NONE")
-    print("DCM MSG:", dcm_msgs[:8] or "none")
+    print("DCM-active MSG:", dcm_active[:8] or "none")
     print("Using-GPS MSG:", gps_msgs[:5] or "none")
     print("Distance flown (SIM path): %.1f m" % dist_flown)
     print("Max AHRS vs SIM horiz error: %.2f m (%u samples)" % (max_horiz_err, n_err))
 
-    ok = (ss_n > 0 and ss_gps == 0 and gps_fix_max == 0 and
+    ok = (ss_n > 0 and ss_gps == 0 and gps_fix_max == 0 and ss_const == 0 and
           any("inertial nav" in x.lower() for x in inertial_msgs) and
-          not any("AHRS: DCM active" in x for x in dcm_msgs))
-    # const-pos is expected before inertial nav starts
+          not dcm_active)
     print("PASS" if ok else "CHECK FAILED")
     return 0 if ok else 1
 

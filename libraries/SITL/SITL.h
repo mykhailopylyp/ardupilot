@@ -633,6 +633,9 @@ public:
     AP_Vector3f accel_scale[INS_MAX_INSTANCES]; // in m/s/s
     AP_Vector3f board_trim;  // rigid board mounting offset (rad), rotates accel+gyro+compass
     AP_Float accel_fail[INS_MAX_INSTANCES];  // accelerometer failure value
+    // idle IMU white-noise floors (historical defaults 0.04 deg/s and 0.01 m/s/s)
+    AP_Float gyro_noise_min;   // deg/s
+    AP_Float accel_noise_min;  // m/s/s
     // gyro and accel fail masks
     AP_Int8 gyro_fail_mask;
     AP_Int8 accel_fail_mask;

@@ -1321,6 +1321,22 @@ const AP_Param::GroupInfo SIM::var_ins[] = {
     // @Units: deg
     AP_GROUPINFO("AHRS_OFF_YAW", 52, SIM, sim_ahrs_offset.yaw, 0),
 
+    // @Param: GYR_NMN
+    // @DisplayName: Gyro idle noise floor
+    // @Description: White-noise floor applied to every simulated gyro sample, in deg/s. Historical SITL default is 0.04. Set near zero for navigation-grade inertial tests. Does not change motor-vibration noise (SIM_GYRn_RND).
+    // @Units: deg/s
+    // @Range: 0 1
+    // @User: Advanced
+    AP_GROUPINFO("GYR_NMN", 53, SIM, gyro_noise_min, 0.04f),
+
+    // @Param: ACC_NMN
+    // @DisplayName: Accel idle noise floor
+    // @Description: White-noise floor applied to every simulated accelerometer sample, in m/s/s. Historical SITL default is 0.01. Set near zero for navigation-grade inertial tests. Does not change motor-vibration noise (SIM_ACCn_RND).
+    // @Units: m/s/s
+    // @Range: 0 1
+    // @User: Advanced
+    AP_GROUPINFO("ACC_NMN", 54, SIM, accel_noise_min, 0.01f),
+
     // the IMUT parameters must be last due to the enable parameters
 #if HAL_INS_TEMPERATURE_CAL_ENABLE
 
